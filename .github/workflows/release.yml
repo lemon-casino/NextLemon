@@ -7,22 +7,52 @@ on:
       - 'v*'
 
 jobs:
+  read-version:
+    runs-on: ubuntu-latest
+    outputs:
+      app-version: ${{ steps.read.outputs.app_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read app version
+        id: read
+        uses: actions/github-script@v7
+        with:
+          result-encoding: string
+          script: |
+            const { version } = require('./package.json')
+            core.setOutput('app_version', version)
+
   release:
+    needs: read-version
     permissions:
       contents: write
+    # 默认仅使用免费 runner（Linux）。如需 Windows/macOS 付费 runner，请在仓库变量或机密中设置 RUN_PAID_RUNNERS=true。
+    if: ${{ !matrix.requires_paid || vars.RUN_PAID_RUNNERS == 'true' || secrets.RUN_PAID_RUNNERS == 'true' }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Linux (免费 runner)
+          - platform: 'ubuntu-latest'
+            args: ''
+            requires_paid: false
           # macOS Apple Silicon (M1/M2/M3)
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            requires_paid: true
           # macOS Intel
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
+            requires_paid: true
           # Windows
           - platform: 'windows-latest'
             args: ''
+            requires_paid: true
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -33,6 +63,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
+
+      - name: Export app version
+        run: echo "APP_VERSION=${{ needs.read-version.outputs.app-version }}" >> "$GITHUB_ENV"
+
+      - name: Sync versioned files
+        run: npm run sync-version
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -50,7 +86,7 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
           # 版本更新时修改此 key 来强制刷新缓存
-          shared-key: "v0.2.0"
+          shared-key: "v${{ env.APP_VERSION }}"
 
       - name: Install frontend dependencies
         run: bun install
@@ -67,6 +103,7 @@ jobs:
 
             请根据您的系统下载对应的安装包：
 
+            - **Linux**: `NextLemon_*_amd64.AppImage`
             - **macOS (Apple Silicon M1/M2/M3)**: `NextLemon_*_aarch64.dmg`
             - **macOS (Intel)**: `NextLemon_*_x64.dmg`
             - **Windows**: `NextLemon_*_x64-setup.exe` 或 `.msi`
