@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Read app version
+        shell: bash
         run: echo "APP_VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
 
       - name: Setup Node.js
