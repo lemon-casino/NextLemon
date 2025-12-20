@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "dialog:default",
+    "fs:default",
+    "fs:allow-download-write",
+    "fs:allow-download-write-recursive",
+    "fs:allow-desktop-write",
+    "fs:allow-desktop-write-recursive",
+    "fs:allow-document-write",
+    "fs:allow-document-write-recursive",
+    "fs:allow-home-write",
+    "fs:allow-home-write-recursive",
+    "fs:allow-download-read",
+    "fs:allow-desktop-read",
+    "fs:allow-document-read",
+    "fs:allow-home-read",
+    "fs:write-all",
+    "fs:read-all",
+    "store:default"
+  ]
+}
