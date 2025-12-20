@@ -15,8 +15,10 @@ import {
   BookText,
   Eye,
   User,
+  Search,
+  ChevronDown,
 } from "lucide-react";
-import { useCanvasStore, type SidebarView } from "@/stores/canvasStore";
+import { useCanvasStore, type SidebarView, type CanvasData } from "@/stores/canvasStore";
 import { useUserPromptStore, type UserPrompt, type CreatePromptInput } from "@/stores/userPromptStore";
 import { nodeCategories, nodeIconMap, nodeIconColors } from "@/config/nodeConfig";
 import { promptCategories, promptIconMap, promptIconColors, type PromptItem } from "@/config/promptConfig";
@@ -28,7 +30,7 @@ import { PromptEditModal } from "@/components/ui/PromptEditModal";
 const navItems: { id: SidebarView; icon: React.ComponentType<{ className?: string }>; label: string }[] = [
   { id: "canvases", icon: LayoutGrid, label: "画布" },
   { id: "nodes", icon: Blocks, label: "节点" },
-  { id: "prompts", icon: BookText, label: "提示词" },
+  { id: "prompts", icon: BookText, label: "提示" },
 ];
 
 interface SidebarProps {
@@ -46,6 +48,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
     renameCanvas,
     switchCanvas,
     duplicateCanvas,
+    reorderCanvases,
   } = useCanvasStore();
 
   // 画布相关状态
@@ -54,6 +57,10 @@ export function Sidebar({ onDragStart }: SidebarProps) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const [isCanvasesExpanded, setIsCanvasesExpanded] = useState(true);
+
+  // 画布拖拽排序状态
+  const [draggingCanvasId, setDraggingCanvasId] = useState<string | null>(null);
 
   // 节点面板相关状态
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,6 +158,36 @@ export function Sidebar({ onDragStart }: SidebarProps) {
     createCanvas();
   }, [createCanvas]);
 
+  // 画布排序处理
+  const handleCanvasDragStart = (e: React.DragEvent, id: string) => {
+    setDraggingCanvasId(id);
+    e.dataTransfer.effectAllowed = "move";
+    // 设一个透明图像或空图像，如果不想显示默认 Ghost
+    // e.dataTransfer.setDragImage(new Image(), 0, 0); 
+  };
+
+  const handleCanvasDragOver = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!draggingCanvasId || draggingCanvasId === targetId) return;
+
+    const currentIndex = canvases.findIndex((c) => c.id === draggingCanvasId);
+    const targetIndex = canvases.findIndex((c) => c.id === targetId);
+
+    if (currentIndex !== -1 && targetIndex !== -1) {
+      // 简单排序：立即交换 (Swap)
+      // 注意：频繁 setState 可能会抖动，这里数据量小应该还好
+      // 也可以用 throttle 优化
+      const newCanvases = [...canvases];
+      const [movedItem] = newCanvases.splice(currentIndex, 1);
+      newCanvases.splice(targetIndex, 0, movedItem);
+      reorderCanvases(newCanvases);
+    }
+  };
+
+  const handleCanvasDragEnd = () => {
+    setDraggingCanvasId(null);
+  };
+
   // 节点面板操作
   const toggleCategory = useCallback((categoryId: string) => {
     setExpandedCategories((prev) => {
@@ -219,529 +256,359 @@ export function Sidebar({ onDragStart }: SidebarProps) {
 
   return (
     <>
-    <div className="flex h-full flex-shrink-0">
-      {/* 最左侧图标导航栏 */}
-      <div className="w-14 flex flex-col items-center py-3 bg-base-200 border-r border-base-300">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = sidebarView === item.id;
-          return (
-            <button
-              key={item.id}
-              className={`
-                w-10 h-10 flex items-center justify-center rounded-lg mb-2
-                transition-colors tooltip tooltip-right
-                ${isActive
-                  ? "bg-primary text-primary-content"
-                  : "hover:bg-base-300 text-base-content/70 hover:text-base-content"
-                }
-              `}
-              data-tip={item.label}
-              onClick={() => setSidebarView(item.id)}
-            >
-              <Icon className="w-5 h-5" />
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 右侧内容面板 - 固定宽度 */}
-      <div className="w-56 flex flex-col bg-base-100 border-r border-base-300">
-        {/* 画布视图 */}
-        {sidebarView === "canvases" && (
-          <>
-            {/* 头部 */}
-            <div className="p-3 border-b border-base-300 flex items-center justify-between">
-              <h3 className="font-semibold text-sm">我的画布</h3>
+      <div className="flex h-full flex-shrink-0 z-40 relative shadow-xl shadow-base-300/20">
+        {/* 最左侧图标导航栏 (Rail) */}
+        <div className="w-[68px] flex flex-col items-center py-4 bg-base-100/80 backdrop-blur border-r border-base-300/50 gap-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = sidebarView === item.id;
+            return (
               <button
-                className="btn btn-ghost btn-xs btn-circle"
-                onClick={handleCreateCanvas}
-                title="新建画布"
+                key={item.id}
+                className={`
+                relative group w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 cursor-pointer
+                ${isActive
+                    ? "bg-primary text-primary-content shadow-lg shadow-primary/30"
+                    : "text-base-content/50 hover:bg-base-200 hover:text-base-content"
+                  }
+              `}
+                title={item.label}
+                onClick={() => setSidebarView(item.id)}
               >
-                <Plus className="w-4 h-4" />
+                <Icon className={`w-5 h-5 transition-transform duration-300 ${isActive ? "scale-100" : "scale-90 group-hover:scale-100"}`} />
+
+                {/* 活动指示器 (可选) */}
+                {isActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-1 h-3 bg-primary rounded-r-full" />
+                )}
               </button>
-            </div>
+            );
+          })}
+        </div>
 
-            {/* 画布列表 */}
-            <div className="flex-1 overflow-y-auto p-2">
-              {canvases.length === 0 ? (
-                <div className="text-center py-8 text-base-content/50">
-                  <LayoutGrid className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-xs">暂无画布</p>
-                  <button
-                    className="btn btn-primary btn-xs mt-3"
-                    onClick={handleCreateCanvas}
-                  >
-                    新建画布
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {canvases.map((canvas) => (
-                    <div
-                      key={canvas.id}
-                      className={`
-                        group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer
-                        transition-colors
-                        ${activeCanvasId === canvas.id
-                          ? "bg-primary/10 text-primary"
-                          : "hover:bg-base-200"
-                        }
-                      `}
-                      onClick={() => editingId !== canvas.id && switchCanvas(canvas.id)}
-                    >
-                      {editingId === canvas.id ? (
-                        <div className="flex-1 flex items-center gap-1">
-                          <Input
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") saveEdit();
-                              if (e.key === "Escape") cancelEdit();
-                            }}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex-1 min-w-0"
-                          />
-                          <button
-                            className="btn btn-ghost btn-xs btn-circle"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              saveEdit();
-                            }}
-                          >
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-xs btn-circle"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              cancelEdit();
-                            }}
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">
-                              {canvas.name}
-                            </div>
-                            <div className="text-xs text-base-content/50">
-                              {canvas.nodes.length} 个节点
-                            </div>
-                          </div>
+        {/* 右侧内容面板 (Drawer) - 毛玻璃半透明背景 */}
+        <div className="w-64 flex flex-col bg-base-100/60 backdrop-blur-md border-r border-base-300/40">
 
-                          <button
-                            ref={(el) => {
-                              if (el) menuButtonRefs.current.set(canvas.id, el);
-                            }}
-                            className={`
-                              btn btn-ghost btn-xs btn-circle
-                              ${menuOpenId === canvas.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}
-                            `}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (menuOpenId === canvas.id) {
-                                setMenuOpenId(null);
-                                setMenuPosition(null);
-                              } else {
-                                openMenu(canvas.id);
-                              }
-                            }}
-                          >
-                            <MoreHorizontal className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* 节点视图 */}
-        {sidebarView === "nodes" && (
-          <>
-            {/* 头部 */}
-            <div className="p-3 border-b border-base-300">
-              <h3 className="font-semibold text-sm mb-2">节点库</h3>
-              <Input
-                isSearch
-                placeholder="搜索节点..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-
-            {/* 节点列表 */}
-            <div className="flex-1 overflow-y-auto p-2">
-              {filteredCategories.map((category) => (
-                <div key={category.id} className="mb-2">
-                  <button
-                    className="flex items-center gap-2 w-full px-2 py-1.5 text-sm font-medium text-base-content/70 hover:text-base-content hover:bg-base-200 rounded-lg transition-colors"
-                    onClick={() => toggleCategory(category.id)}
-                  >
-                    <ChevronRight
-                      className={`w-4 h-4 transition-transform duration-200 ${
-                        expandedCategories.has(category.id) ? "rotate-90" : ""
-                      }`}
-                    />
-                    <span>{category.name}</span>
-                    <span className="text-xs text-base-content/40 ml-auto">
-                      {category.nodes.length}
-                    </span>
-                  </button>
-
-                  {/* 使用 grid 实现平滑展开/收起动画 */}
-                  <div
-                    className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-                      expandedCategories.has(category.id)
-                        ? "grid-rows-[1fr]"
-                        : "grid-rows-[0fr]"
-                    }`}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="mt-1 space-y-1">
-                        {category.nodes.map((node) => {
-                          const IconComponent = nodeIconMap[node.icon];
-                          const iconColorClass = nodeIconColors[node.icon] || "";
-                          return (
-                            <div
-                              key={node.type}
-                              className="draggable-node flex items-center gap-2 px-2 py-2 bg-base-200/50 hover:bg-base-200 rounded-lg transition-colors group cursor-grab"
-                              draggable
-                              onDragStart={(e) => onDragStart(e, node.type, node.defaultData)}
-                            >
-                              <GripVertical className="w-3 h-3 text-base-content/30 group-hover:text-base-content/50 flex-shrink-0" />
-                              <div className={`p-1.5 rounded-lg flex-shrink-0 ${iconColorClass}`}>
-                                {IconComponent && <IconComponent className="w-4 h-4" />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium truncate">{node.label}</div>
-                                <div className="text-xs text-base-content/50 truncate">
-                                  {node.description}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* 底部提示 */}
-            <div className="p-3 border-t border-base-300">
-              <p className="text-xs text-base-content/40 text-center">
-                拖拽节点到画布中使用
-              </p>
-            </div>
-          </>
-        )}
-
-        {/* 提示词视图 */}
-        {sidebarView === "prompts" && (
-          <>
-            {/* 头部 */}
-            <div className="p-3 border-b border-base-300">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-sm">提示词库</h3>
+          {/* 画布视图 */}
+          {sidebarView === "canvases" && (
+            <>
+              <div className="p-4 flex items-center justify-between sticky top-0 bg-transparent z-10">
                 <button
-                  className="btn btn-ghost btn-xs gap-1"
-                  onClick={() => {
-                    setEditingUserPrompt(null);
-                    setIsEditModalOpen(true);
-                  }}
+                  className="flex items-center gap-1 font-bold text-base tracking-tight text-base-content/90 hover:text-primary transition-colors cursor-pointer"
+                  onClick={() => setIsCanvasesExpanded(!isCanvasesExpanded)}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  新建
+                  <ChevronRight className={`w-4 h-4 transition-transform ${isCanvasesExpanded ? "rotate-90" : ""}`} />
+                  我的画布
+                </button>
+                <button
+                  className="btn btn-ghost btn-xs btn-circle hover:bg-base-content/10"
+                  onClick={handleCreateCanvas}
+                  title="新建画布"
+                >
+                  <Plus className="w-4 h-4" />
                 </button>
               </div>
-              <Input
-                isSearch
-                placeholder="搜索提示词..."
-                value={promptSearchQuery}
-                onChange={(e) => setPromptSearchQuery(e.target.value)}
-              />
-            </div>
 
-            {/* 提示词列表 */}
-            <div className="flex-1 overflow-y-auto p-2">
-              {/* 用户自定义提示词 */}
-              {userPrompts.length > 0 && (
-                <div className="mb-2">
-                  <button
-                    className="flex items-center gap-2 w-full px-2 py-1.5 text-sm font-medium text-base-content/70 hover:text-base-content hover:bg-base-200 rounded-lg transition-colors"
-                    onClick={() => setIsUserPromptsExpanded(!isUserPromptsExpanded)}
-                  >
-                    <ChevronRight
-                      className={`w-4 h-4 transition-transform duration-200 ${
-                        isUserPromptsExpanded ? "rotate-90" : ""
-                      }`}
-                    />
-                    <div className="p-1 rounded bg-primary/10 text-primary">
-                      <User className="w-3 h-3" />
-                    </div>
-                    <span className="truncate">我的提示词</span>
-                    <span className="text-xs text-base-content/40 ml-auto">
-                      {userPrompts.length}
-                    </span>
-                  </button>
+              <div
+                className={`flex-1 overflow-y-auto px-3 space-y-2 transition-all duration-300 ${isCanvasesExpanded ? "opacity-100" : "opacity-30 pointer-events-none"}`}
+              >
+                <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${isCanvasesExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                  <div className="overflow-hidden min-h-0">
+                    {canvases.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-40 text-base-content/40 bg-base-200/30 rounded-xl border border-dashed border-base-300 mx-1">
+                        <LayoutGrid className="w-8 h-8 mb-2 opacity-50" />
+                        <p className="text-xs">暂无画布</p>
+                        <button className="btn btn-primary btn-xs mt-3 shadow-md shadow-primary/20" onClick={handleCreateCanvas}>
+                          新建画布
+                        </button>
+                      </div>
+                    ) : (
+                      canvases.map((canvas) => (
+                        <div
+                          key={canvas.id}
+                          draggable={editingId !== canvas.id}
+                          onDragStart={(e) => handleCanvasDragStart(e, canvas.id)}
+                          onDragOver={(e) => handleCanvasDragOver(e, canvas.id)}
+                          onDragEnd={handleCanvasDragEnd}
+                          className={`
+                          group relative flex items-center gap-3 p-3 rounded-xl
+                          transition-all duration-200 border mb-2
+                          ${draggingCanvasId === canvas.id ? "opacity-50 scale-95 border-dashed border-primary" : ""}
+                          ${activeCanvasId === canvas.id
+                              ? "bg-base-100 border-primary/30 shadow-md shadow-base-200"
+                              : "bg-transparent border-transparent hover:bg-base-200/50 hover:border-base-200"
+                            }
+                          ${editingId === canvas.id ? "cursor-default" : "cursor-grab active:cursor-grabbing"}
+                        `}
+                          onClick={() => editingId !== canvas.id && switchCanvas(canvas.id)}
+                        >
+                          {/* 左侧状态条 OR 拖拽把手 (Hover 时显示把手) */}
+                          <div className="relative w-1 h-8 flex items-center justify-center">
+                            <div className={`w-1 h-8 rounded-full transition-all duration-200 ${activeCanvasId === canvas.id ? "bg-primary" : "bg-base-300"} group-hover:opacity-0`} />
+                            <GripVertical className="absolute w-4 h-4 text-base-content/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
 
-                  <div
-                    className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-                      isUserPromptsExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-                    }`}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="mt-1 space-y-1">
-                        {userPrompts
-                          .filter(
-                            (p) =>
-                              !promptSearchQuery ||
-                              p.title.toLowerCase().includes(promptSearchQuery.toLowerCase()) ||
-                              p.prompt.toLowerCase().includes(promptSearchQuery.toLowerCase())
-                          )
-                          .map((userPrompt) => (
-                            <div
-                              key={userPrompt.id}
-                              className="draggable-prompt relative flex items-start gap-2 px-2 py-2 bg-base-200/50 hover:bg-base-200 rounded-lg transition-colors group cursor-grab"
-                              draggable
-                              onDragStart={(e) => {
-                                e.dataTransfer.setData(
-                                  "application/reactflow/prompt-template",
-                                  JSON.stringify({
-                                    promptText: userPrompt.prompt,
-                                    template: userPrompt.nodeTemplate,
-                                  })
-                                );
-                                e.dataTransfer.effectAllowed = "move";
-                              }}
-                            >
-                              <GripVertical className="w-3 h-3 mt-1 text-base-content/30 group-hover:text-base-content/50 flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium truncate">{userPrompt.title}</div>
-                                <div className="text-xs text-base-content/50 truncate">
-                                  {userPrompt.description || userPrompt.prompt.slice(0, 50)}
-                                </div>
-                              </div>
-                              {/* 操作按钮 */}
-                              <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                  className="btn btn-ghost btn-xs btn-circle"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    // 转换为 PromptItem 格式用于预览
-                                    setPreviewPrompt({
-                                      id: userPrompt.id,
-                                      title: userPrompt.title,
-                                      titleEn: "",
-                                      description: userPrompt.description,
-                                      prompt: userPrompt.prompt,
-                                      tags: userPrompt.tags || [],
-                                      previewImage: userPrompt.previewImage,
-                                      nodeTemplate: userPrompt.nodeTemplate,
-                                    });
-                                    setIsPreviewModalOpen(true);
-                                  }}
-                                  title="预览"
-                                >
-                                  <Eye className="w-3 h-3" />
-                                </button>
-                                <button
-                                  className="btn btn-ghost btn-xs btn-circle"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingUserPrompt(userPrompt);
-                                    setIsEditModalOpen(true);
-                                  }}
-                                  title="编辑"
-                                >
-                                  <Edit3 className="w-3 h-3" />
-                                </button>
-                                <button
-                                  className="btn btn-ghost btn-xs btn-circle text-error"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (confirm("确定删除这个提示词吗？")) {
-                                      deletePrompt(userPrompt.id);
-                                    }
-                                  }}
-                                  title="删除"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
+                          {editingId === canvas.id ? (
+                            <div className="flex-1 flex items-center gap-1 min-w-0">
+                              <Input
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveEdit();
+                                  if (e.key === "Escape") cancelEdit();
+                                }}
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-8 text-sm"
+                              />
+                              <button className="btn btn-ghost btn-xs btn-circle text-success" onClick={(e) => { e.stopPropagation(); saveEdit(); }}><Check className="w-3.5 h-3.5" /></button>
+                              <button className="btn btn-ghost btn-xs btn-circle text-base-content/50" onClick={(e) => { e.stopPropagation(); cancelEdit(); }}><X className="w-3.5 h-3.5" /></button>
                             </div>
-                          ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 系统提示词分类 */}
-              {filteredPromptCategories.map((category) => {
-                const CategoryIcon = promptIconMap[category.icon];
-                const categoryColorClass = promptIconColors[category.icon] || "";
-                return (
-                  <div key={category.id} className="mb-2">
-                    <button
-                      className="flex items-center gap-2 w-full px-2 py-1.5 text-sm font-medium text-base-content/70 hover:text-base-content hover:bg-base-200 rounded-lg transition-colors"
-                      onClick={() => togglePromptCategory(category.id)}
-                    >
-                      <ChevronRight
-                        className={`w-4 h-4 transition-transform duration-200 ${
-                          expandedPromptCategories.has(category.id) ? "rotate-90" : ""
-                        }`}
-                      />
-                      <div className={`p-1 rounded ${categoryColorClass}`}>
-                        {CategoryIcon && <CategoryIcon className="w-3 h-3" />}
-                      </div>
-                      <span className="truncate">{category.name}</span>
-                      <span className="text-xs text-base-content/40 ml-auto">
-                        {category.prompts.length}
-                      </span>
-                    </button>
-
-                    {/* 使用 grid 实现平滑展开/收起动画 */}
-                    <div
-                      className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-                        expandedPromptCategories.has(category.id)
-                          ? "grid-rows-[1fr]"
-                          : "grid-rows-[0fr]"
-                      }`}
-                    >
-                      <div className="overflow-hidden">
-                        <div className="mt-1 space-y-1">
-                          {category.prompts.map((prompt) => (
-                            <div
-                              key={prompt.id}
-                              className="draggable-prompt flex items-start gap-2 px-2 py-2 bg-base-200/50 hover:bg-base-200 rounded-lg transition-colors group cursor-grab"
-                              draggable
-                              onDragStart={(e) => {
-                                // 设置提示词模板数据
-                                e.dataTransfer.setData(
-                                  "application/reactflow/prompt-template",
-                                  JSON.stringify({
-                                    promptText: prompt.prompt,
-                                    template: prompt.nodeTemplate,
-                                  })
-                                );
-                                e.dataTransfer.effectAllowed = "move";
-                              }}
-                            >
-                              <GripVertical className="w-3 h-3 mt-1 text-base-content/30 group-hover:text-base-content/50 flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium truncate">{prompt.title}</div>
-                                <div className="text-xs text-base-content/50 truncate">
-                                  {prompt.description}
+                          ) : (
+                            <>
+                              <div className="flex-1 min-w-0 pointer-events-none">
+                                <div className={`text-sm font-medium truncate ${activeCanvasId === canvas.id ? "text-primary" : "text-base-content/80"}`}>
+                                  {canvas.name}
+                                </div>
+                                <div className="text-xs text-base-content/40 mt-0.5">
+                                  {canvas.nodes.length} 个节点
                                 </div>
                               </div>
+
                               <button
-                                className="btn btn-ghost btn-xs btn-circle flex-shrink-0"
+                                ref={(el) => { if (el) menuButtonRefs.current.set(canvas.id, el); }}
+                                className={`
+                                btn btn-ghost btn-xs btn-circle
+                                transition-all duration-200
+                                ${menuOpenId === canvas.id ? "opacity-100 bg-base-200" : "opacity-0 group-hover:opacity-100"}
+                              `}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openPromptPreview(prompt);
+                                  if (menuOpenId === canvas.id) { setMenuOpenId(null); setMenuPosition(null); }
+                                  else { openMenu(canvas.id); }
                                 }}
-                                title="预览提示词"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <MoreHorizontal className="w-4 h-4" />
                               </button>
-                            </div>
-                          ))}
+                            </>
+                          )}
+                        </div>
+                      ))
+                    )}
+                    <div className="h-5" /> {/* Bottom spacer */}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* 节点视图 */}
+          {sidebarView === "nodes" && (
+            <>
+              <div className="p-4 pb-2 sticky top-0 bg-transparent z-10 backdrop-blur-xl">
+                <h3 className="font-bold text-base tracking-tight mb-3 text-base-content/90 flex items-center gap-1">
+                  节点库
+                </h3>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/30" />
+                  <input
+                    type="text"
+                    placeholder="搜索节点..."
+                    className="w-full h-9 pl-9 pr-3 bg-base-200/50 border border-base-300/50 rounded-lg text-sm focus:outline-none focus:bg-base-100 focus:border-primary/30 transition-all placeholder:text-base-content/30"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-3 py-2 pb-6">
+                {filteredCategories.map((category) => (
+                  <div key={category.id} className="mb-4">
+                    <button
+                      className="flex items-center gap-2 w-full px-1 py-1 mb-1 text-xs font-bold text-base-content/40 uppercase tracking-wider hover:text-base-content/70 transition-colors cursor-pointer"
+                      onClick={() => toggleCategory(category.id)}
+                    >
+                      <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedCategories.has(category.id) ? "rotate-90" : ""}`} />
+                      <span>{category.name}</span>
+                    </button>
+
+                    <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${expandedCategories.has(category.id) ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                      <div className="overflow-hidden">
+                        <div className="space-y-2 pt-1">
+                          {category.nodes.map((node) => {
+                            const IconComponent = nodeIconMap[node.icon];
+                            const iconColorClass = nodeIconColors[node.icon] || "";
+                            return (
+                              <div
+                                key={node.type}
+                                className="draggable-node group flex items-start gap-3 p-3 bg-base-100 border border-base-200/60 rounded-xl hover:border-primary/40 hover:shadow-md hover:shadow-primary/5 transition-all duration-200 cursor-grab active:cursor-grabbing relative overflow-hidden"
+                                draggable
+                                onDragStart={(e) => onDragStart(e, node.type, node.defaultData)}
+                              >
+                                {/* 悬停时的光效 */}
+                                <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-base-200/50 group-hover:bg-white group-hover:shadow-sm transition-all ${iconColorClass}`}>
+                                  {IconComponent && <IconComponent className="w-5 h-5" />}
+                                </div>
+                                <div className="flex-1 min-w-0 z-10">
+                                  <div className="text-sm font-medium text-base-content/90">{node.label}</div>
+                                  <div className="text-xs text-base-content/50 leading-snug mt-0.5 line-clamp-2">
+                                    {node.description}
+                                  </div>
+                                </div>
+                                <GripVertical className="w-4 h-4 text-base-content/10 group-hover:text-base-content/30 self-center opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            </>
+          )}
 
-            {/* 底部提示 */}
-            <div className="p-3 border-t border-base-300">
-              <p className="text-xs text-base-content/40 text-center">
-                拖拽提示词到画布中使用
-              </p>
-            </div>
-          </>
-        )}
+          {/* 提示词视图 */}
+          {sidebarView === "prompts" && (
+            <>
+              <div className="p-4 pb-2 sticky top-0 bg-transparent z-10 backdrop-blur-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-base tracking-tight text-base-content/90 flex items-center gap-1">
+                    提示词库
+                  </h3>
+                  <button
+                    className="btn btn-ghost btn-xs gap-1 text-primary hover:bg-primary/10"
+                    onClick={() => {
+                      setEditingUserPrompt(null);
+                      setIsEditModalOpen(true);
+                    }}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    新建
+                  </button>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/30" />
+                  <input
+                    type="text"
+                    placeholder="搜索提示词..."
+                    className="w-full h-9 pl-9 pr-3 bg-base-200/50 border border-base-300/50 rounded-lg text-sm focus:outline-none focus:bg-base-100 focus:border-primary/30 transition-all placeholder:text-base-content/30"
+                    value={promptSearchQuery}
+                    onChange={(e) => setPromptSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-3 py-2 pb-6">
+                {/* 用户自定义提示词 */}
+                {userPrompts.length > 0 && (
+                  <div className="mb-4">
+                    <button
+                      className="flex items-center gap-2 w-full px-1 py-1 mb-1 text-xs font-bold text-base-content/40 uppercase tracking-wider hover:text-base-content/70 transition-colors cursor-pointer"
+                      onClick={() => setIsUserPromptsExpanded(!isUserPromptsExpanded)}
+                    >
+                      <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${isUserPromptsExpanded ? "rotate-90" : ""}`} />
+                      <span className="flex items-center gap-1.5"><User className="w-3 h-3" /> 我的提示词</span>
+                    </button>
+
+                    <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${isUserPromptsExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                      <div className="overflow-hidden">
+                        <div className="space-y-2 pt-1">
+                          {userPrompts
+                            .filter((p) => !promptSearchQuery || p.title.toLowerCase().includes(promptSearchQuery.toLowerCase()))
+                            .map((userPrompt) => (
+                              <div
+                                key={userPrompt.id}
+                                className="draggable-prompt group relative p-3 bg-base-100 border border-base-200/60 rounded-xl hover:border-primary/40 hover:shadow-md hover:shadow-primary/5 transition-all duration-200 cursor-grab active:cursor-grabbing"
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData("application/reactflow/prompt-template", JSON.stringify({ promptText: userPrompt.prompt, template: userPrompt.nodeTemplate }));
+                                  e.dataTransfer.effectAllowed = "move";
+                                }}
+                              >
+                                <div className="flex justify-between items-start mb-1">
+                                  <div className="font-medium text-sm text-base-content/90 line-clamp-1">{userPrompt.title}</div>
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button className="p-1 hover:bg-base-200 rounded text-base-content/60" onClick={(e) => { e.stopPropagation(); setPreviewPrompt({ ...userPrompt } as any); setIsPreviewModalOpen(true); }}><Eye className="w-3 h-3" /></button>
+                                    <button className="p-1 hover:bg-base-200 rounded text-base-content/60" onClick={(e) => { e.stopPropagation(); setEditingUserPrompt(userPrompt); setIsEditModalOpen(true); }}><Edit3 className="w-3 h-3" /></button>
+                                    <button className="p-1 hover:bg-error/10 rounded text-error" onClick={(e) => { e.stopPropagation(); if (confirm("删除?")) deletePrompt(userPrompt.id); }}><Trash2 className="w-3 h-3" /></button>
+                                  </div>
+                                </div>
+                                <div className="text-xs text-base-content/50 line-clamp-2 leading-relaxed">{userPrompt.description || userPrompt.prompt}</div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 系统提示词 */}
+                {filteredPromptCategories.map((category) => {
+                  const CategoryIcon = promptIconMap[category.icon];
+                  return (
+                    <div key={category.id} className="mb-4">
+                      <button
+                        className="flex items-center gap-2 w-full px-1 py-1 mb-1 text-xs font-bold text-base-content/40 uppercase tracking-wider hover:text-base-content/70 transition-colors cursor-pointer"
+                        onClick={() => togglePromptCategory(category.id)}
+                      >
+                        <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedPromptCategories.has(category.id) ? "rotate-90" : ""}`} />
+                        {CategoryIcon && <CategoryIcon className="w-3 h-3" />}
+                        <span>{category.name}</span>
+                      </button>
+
+                      <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${expandedPromptCategories.has(category.id) ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                        <div className="overflow-hidden">
+                          <div className="space-y-2 pt-1">
+                            {category.prompts.map((prompt) => (
+                              <div
+                                key={prompt.id}
+                                className="draggable-prompt group p-3 bg-base-100 border border-base-200/60 rounded-xl hover:border-primary/40 hover:shadow-md hover:shadow-primary/5 transition-all duration-200 cursor-grab active:cursor-grabbing"
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData("application/reactflow/prompt-template", JSON.stringify({ promptText: prompt.prompt, template: prompt.nodeTemplate }));
+                                  e.dataTransfer.effectAllowed = "move";
+                                }}
+                              >
+                                <div className="flex justify-between items-start mb-1">
+                                  <div className="font-medium text-sm text-base-content/90 line-clamp-1">{prompt.title}</div>
+                                  <button className="p-1 -mr-1 -mt-1 hover:bg-base-200 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); openPromptPreview(prompt); }}>
+                                    <Eye className="w-3.5 h-3.5 text-base-content/50" />
+                                  </button>
+                                </div>
+                                <div className="text-xs text-base-content/50 line-clamp-2 leading-relaxed">{prompt.description}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
 
-    {/* Portal: 画布上下文菜单 */}
-    {menuOpenId && menuPosition && menuCanvas && createPortal(
-      <ul
-        className="canvas-context-menu menu bg-base-100 rounded-box w-32 p-1 shadow-lg border border-base-300 fixed z-[9999]"
-        style={{ top: menuPosition.top, left: menuPosition.left }}
-      >
-        <li>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              startEditing(menuCanvas.id, menuCanvas.name);
-            }}
-          >
-            <Edit3 className="w-4 h-4" />
-            重命名
-          </button>
-        </li>
-        <li>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDuplicate(menuCanvas.id);
-            }}
-          >
-            <Copy className="w-4 h-4" />
-            复制
-          </button>
-        </li>
-        <li>
-          <button
-            className="text-error"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete(menuCanvas.id);
-            }}
-          >
-            <Trash2 className="w-4 h-4" />
-            删除
-          </button>
-        </li>
-      </ul>,
-      document.body
-    )}
+      {/* Context Menu Portal */}
+      {menuOpenId && menuPosition && menuCanvas && createPortal(
+        <ul
+          className="canvas-context-menu menu bg-base-100/95 backdrop-blur rounded-xl w-36 p-1.5 shadow-float border border-base-200 fixed z-[9999]"
+          style={{ top: menuPosition.top, left: menuPosition.left }}
+        >
+          <li><button onClick={(e) => { e.stopPropagation(); startEditing(menuCanvas.id, menuCanvas.name); }}><Edit3 className="w-4 h-4" /> 重命名</button></li>
+          <li><button onClick={(e) => { e.stopPropagation(); handleDuplicate(menuCanvas.id); }}><Copy className="w-4 h-4" /> 复制</button></li>
+          <div className="divider my-1 h-px bg-base-200/50" />
+          <li><button className="text-error hover:bg-error/10" onClick={(e) => { e.stopPropagation(); handleDelete(menuCanvas.id); }}><Trash2 className="w-4 h-4" /> 删除</button></li>
+        </ul>,
+        document.body
+      )}
 
-    {/* 提示词预览 Modal */}
-    <PromptPreviewModal
-      prompt={previewPrompt}
-      isOpen={isPreviewModalOpen}
-      onClose={closePromptPreview}
-    />
-
-    {/* 提示词编辑 Modal */}
-    <PromptEditModal
-      isOpen={isEditModalOpen}
-      onClose={() => {
-        setIsEditModalOpen(false);
-        setEditingUserPrompt(null);
-      }}
-      onSave={(input: CreatePromptInput) => {
-        if (editingUserPrompt) {
-          updatePrompt(editingUserPrompt.id, input);
-        } else {
-          addPrompt(input);
-        }
-      }}
-      editingPrompt={editingUserPrompt}
-    />
+      <PromptPreviewModal prompt={previewPrompt} isOpen={isPreviewModalOpen} onClose={closePromptPreview} />
+      <PromptEditModal isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setEditingUserPrompt(null); }} onSave={(input) => { if (editingUserPrompt) { updatePrompt(editingUserPrompt.id, input); } else { addPrompt(input); } }} editingPrompt={editingUserPrompt} />
     </>
   );
 }

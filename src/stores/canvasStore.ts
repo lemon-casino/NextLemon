@@ -43,6 +43,9 @@ interface CanvasStore {
 
   // 侧边栏视图切换
   setSidebarView: (view: SidebarView) => void;
+
+  // 重新排序画布
+  reorderCanvases: (newOrder: CanvasData[]) => void;
 }
 
 export const useCanvasStore = create<CanvasStore>()(
@@ -145,6 +148,10 @@ export const useCanvasStore = create<CanvasStore>()(
 
       setSidebarView: (view) => {
         set({ sidebarView: view });
+      },
+
+      reorderCanvases: (newOrder) => {
+        set({ canvases: newOrder });
       },
     }),
     {
