@@ -61,15 +61,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'NextCreator ${{ github.ref_name }}'
+          releaseName: 'NextLemon ${{ github.ref_name }}'
           releaseBody: |
-            ## NextCreator ${{ github.ref_name }}
+            ## NextLemon ${{ github.ref_name }}
 
             请根据您的系统下载对应的安装包：
 
-            - **macOS (Apple Silicon M1/M2/M3)**: `NextCreator_*_aarch64.dmg`
-            - **macOS (Intel)**: `NextCreator_*_x64.dmg`
-            - **Windows**: `NextCreator_*_x64-setup.exe` 或 `.msi`
+            - **macOS (Apple Silicon M1/M2/M3)**: `NextLemon_*_aarch64.dmg`
+            - **macOS (Intel)**: `NextLemon_*_x64.dmg`
+            - **Windows**: `NextLemon_*_x64-setup.exe` 或 `.msi`
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
