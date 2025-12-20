@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback } from "react";
 import {
   LayoutGrid,
   Blocks,
@@ -12,7 +12,7 @@ import {
 import { useCanvasStore, type SidebarView } from "@/stores/canvasStore";
 import { useUserPromptStore, type UserPrompt, type CreatePromptInput } from "@/stores/userPromptStore";
 import { nodeCategories, nodeIconMap, nodeIconColors } from "@/config/nodeConfig";
-import { promptCategories, promptIconMap, promptIconColors, type PromptItem } from "@/config/promptConfig";
+import { promptCategories, type PromptItem } from "@/config/promptConfig";
 import { Input } from "@/components/ui/Input";
 import { PromptPreviewModal } from "@/components/ui/PromptPreviewModal";
 import { PromptEditModal } from "@/components/ui/PromptEditModal";
@@ -38,15 +38,12 @@ export function Sidebar({ onDragStart }: SidebarProps) {
     deleteCanvas,
     renameCanvas,
     switchCanvas,
-    duplicateCanvas,
   } = useCanvasStore();
 
   // Canvas State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
-  const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  // Context menu state removed as it was unused and causing lint errors
 
   // Node Panel State
   const [searchQuery, setSearchQuery] = useState("");
@@ -68,54 +65,10 @@ export function Sidebar({ onDragStart }: SidebarProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUserPrompt, setEditingUserPrompt] = useState<UserPrompt | null>(null);
 
-  // Close context menu on outside click
-  useEffect(() => {
-    if (!menuOpenId) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest(".canvas-context-menu")) {
-        setMenuOpenId(null);
-        setMenuPosition(null);
-      }
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setMenuOpenId(null);
-        setMenuPosition(null);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [menuOpenId]);
-
-  /*
-  // Context Menu Functions (temporarily removed or simplified for this refactor if unused, or keep if context menu logic is needed)
-  // Logic kept for potential future use or re-implementation of custom context menu
-  const openMenu = useCallback((canvasId: string) => {
-     const button = menuButtonRefs.current.get(canvasId);
-     if (button) {
-       const rect = button.getBoundingClientRect();
-       setMenuPosition({
-         top: rect.bottom + 4,
-         left: rect.right - 128,
-       });
-       setMenuOpenId(canvasId);
-     }
-  }, []);
-  */
-
   // Canvas Operations
   const startEditing = useCallback((id: string, currentName: string) => {
     setEditingId(id);
     setEditName(currentName);
-    setMenuOpenId(null);
   }, []);
 
   const saveEdit = useCallback(() => {
@@ -133,15 +86,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
 
   const handleDelete = useCallback((id: string) => {
     deleteCanvas(id);
-    setMenuOpenId(null);
   }, [deleteCanvas]);
-
-  /*
-  const handleDuplicate = useCallback((id: string) => {
-    duplicateCanvas(id);
-    setMenuOpenId(null);
-  }, [duplicateCanvas]);
-  */
 
   const handleCreateCanvas = useCallback(() => {
     createCanvas();
@@ -365,7 +310,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                   value={searchQuery}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                   className="bg-black/20 border-white/10 text-white placeholder:text-white/30 focus:border-primary/50"
-                  icon={
+                  leftIcon={
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
                   }
                 />
@@ -394,7 +339,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                         >
                           <path d="m9 18 6-6-6-6" />
                         </svg>
-                        {category.label}
+                        {category.name}
                       </button>
 
                       {/* Nodes Grid */}
@@ -438,7 +383,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                   value={promptSearchQuery}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromptSearchQuery(e.target.value)}
                   className="bg-black/20 border-white/10 text-white placeholder:text-white/30 focus:border-primary/50"
-                  icon={
+                  leftIcon={
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
                   }
                 />
@@ -494,7 +439,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                             draggable
                             onDragStart={(e: React.DragEvent) => onDragStart(e, "llm", {
                               title: prompt.title, // Map to Node Data
-                              prompt: prompt.content
+                              prompt: prompt.prompt
                             })}
                           >
                             <div className="flex items-start justify-between">
@@ -527,7 +472,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                                 </button>
                               </div>
                             </div>
-                            <p className="text-xs text-white/50 mt-1 line-clamp-2">{prompt.content}</p>
+                            <p className="text-xs text-white/50 mt-1 line-clamp-2">{prompt.prompt}</p>
                           </div>
                         ))
                       )}
@@ -556,7 +501,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                       >
                         <path d="m9 18 6-6-6-6" />
                       </svg>
-                      {category.label}
+                      {category.nameEn}
                     </button>
 
                     {expandedPromptCategories.has(category.id) && (
@@ -568,7 +513,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                             draggable
                             onDragStart={(e: React.DragEvent) => onDragStart(e, "llm", {
                               title: prompt.title,
-                              prompt: prompt.template
+                              prompt: prompt.prompt
                             })}
                             onClick={() => openPromptPreview(prompt)}
                           >
@@ -612,7 +557,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
         <PromptEditModal
           isOpen={isEditModalOpen}
           onClose={() => setIsEditModalOpen(false)}
-          initialData={editingUserPrompt || undefined}
+          editingPrompt={editingUserPrompt || null}
           onSave={(data: CreatePromptInput) => {
             if (editingUserPrompt) {
               updatePrompt(editingUserPrompt.id, data);
