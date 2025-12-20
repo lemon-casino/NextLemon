@@ -7,7 +7,25 @@ on:
       - 'v*'
 
 jobs:
+  read-version:
+    runs-on: ubuntu-latest
+    outputs:
+      app-version: ${{ steps.read.outputs.app_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read app version
+        id: read
+        uses: actions/github-script@v7
+        with:
+          result-encoding: string
+          script: |
+            const { version } = require('./package.json')
+            core.setOutput('app_version', version)
+
   release:
+    needs: read-version
     permissions:
       contents: write
     defaults:
@@ -46,12 +64,8 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      - name: Read app version
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { version } = require('./package.json')
-            core.exportVariable('APP_VERSION', version)
+      - name: Export app version
+        run: echo "APP_VERSION=${{ needs.read-version.outputs.app-version }}" >> "$GITHUB_ENV"
 
       - name: Sync versioned files
         run: npm run sync-version
