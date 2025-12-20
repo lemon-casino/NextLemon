@@ -10,6 +10,9 @@ jobs:
   release:
     permissions:
       contents: write
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -34,6 +37,16 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Read app version
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { version } = require('./package.json')
+            core.exportVariable('APP_VERSION', version)
+
+      - name: Sync versioned files
+        run: npm run sync-version
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -50,7 +63,7 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
           # 版本更新时修改此 key 来强制刷新缓存
-          shared-key: "v0.2.0"
+          shared-key: "v${{ env.APP_VERSION }}"
 
       - name: Install frontend dependencies
         run: bun install
