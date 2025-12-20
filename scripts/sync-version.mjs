@@ -7,6 +7,16 @@ const rootDir = path.resolve(__dirname, "..");
 const packageJsonPath = path.join(rootDir, "package.json");
 
 const { version } = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+const args = new Set(process.argv.slice(2));
+
+function printVersionAndExit(format = "plain") {
+  if (format === "github-output") {
+    console.log(`value=${version}`);
+  } else {
+    console.log(version);
+  }
+  process.exit(0);
+}
 
 function updateJsonVersion(filePath) {
   const fullPath = path.join(rootDir, filePath);
@@ -57,6 +67,14 @@ function updateReleaseWorkflowCacheKey() {
     writeFileSync(workflowPath, updated);
     console.log("Updated shared cache key in .github/workflows/release.yml");
   }
+}
+
+if (args.has("--print-version")) {
+  printVersionAndExit();
+}
+
+if (args.has("--github-output")) {
+  printVersionAndExit("github-output");
 }
 
 updateTauriConfig();
