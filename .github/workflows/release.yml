@@ -10,6 +10,9 @@ jobs:
   release:
     permissions:
       contents: write
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +45,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
+
+      - name: Read app version
+        run: |
+          VERSION=$(npm pkg get version | tr -d '"')
+          echo "APP_VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Sync versioned files
         run: npm run sync-version
