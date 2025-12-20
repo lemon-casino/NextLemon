@@ -5,10 +5,12 @@
   "license": "AGPL-3.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node ./scripts/sync-version.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "sync:version": "node ./scripts/sync-version.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.32.0",
