@@ -34,6 +34,10 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Read app version
+        id: app_version
+        run: node ./scripts/sync-version.mjs --github-output >> $GITHUB_OUTPUT
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -50,7 +54,7 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
           # 版本更新时修改此 key 来强制刷新缓存
-          shared-key: "v0.2.0"
+          shared-key: "v${{ steps.app_version.outputs.value }}"
 
       - name: Install frontend dependencies
         run: bun install

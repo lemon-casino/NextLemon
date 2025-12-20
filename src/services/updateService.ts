@@ -3,9 +3,7 @@
  * 通过 GitHub API 获取最新 tag 来检测更新
  */
 
-// 从 package.json 动态获取版本号需要在编译时注入，这里使用常量
-// 在 vite.config.ts 中会通过 define 注入
-declare const __APP_VERSION__: string;
+import { APP_VERSION } from "@/utils/version";
 
 // GitHub 仓库信息
 export const GITHUB_REPO = {
@@ -44,8 +42,7 @@ export interface GitHubRelease {
  * 获取当前应用版本号
  */
 export function getCurrentVersion(): string {
-  // 使用 Vite 注入的版本号，如果不存在则使用默认值
-  return typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.2.0";
+  return APP_VERSION;
 }
 
 /**

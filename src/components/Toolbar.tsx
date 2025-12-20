@@ -8,6 +8,7 @@ import { useModal, getModalAnimationClasses } from "@/hooks/useModal";
 import { isTauriEnvironment } from "@/services/fileStorageService";
 import { toast } from "@/stores/toastStore";
 import { WorkflowControls } from "@/components/workflow/WorkflowControls";
+import { APP_VERSION } from "@/utils/version";
 import logoImage from "@/assets/logo.png";
 
 export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
@@ -181,7 +182,7 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
           <img src={logoImage} alt="NextLemon" className="w-8 h-8" />
           <span className="font-semibold text-lg">NextLemon</span>
         </div>
-        <div className="badge badge-ghost badge-sm">v0.2.0</div>
+        <div className="badge badge-ghost badge-sm">v{APP_VERSION}</div>
       </div>
 
       {/* 中间工具 */}
