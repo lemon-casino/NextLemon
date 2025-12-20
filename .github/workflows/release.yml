@@ -47,9 +47,11 @@ jobs:
           node-version: 'lts/*'
 
       - name: Read app version
-        run: |
-          VERSION=$(npm pkg get version | tr -d '"')
-          echo "APP_VERSION=${VERSION}" >> "$GITHUB_ENV"
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { version } = require('./package.json')
+            core.exportVariable('APP_VERSION', version)
 
       - name: Sync versioned files
         run: npm run sync-version
