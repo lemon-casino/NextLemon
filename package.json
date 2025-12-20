@@ -1,7 +1,7 @@
 {
   "name": "nextcreator",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.0.1",
   "license": "AGPL-3.0",
   "type": "module",
   "scripts": {
@@ -38,5 +38,8 @@
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
+  },
+  "volta": {
+    "node": "20.19.2"
   }
 }
