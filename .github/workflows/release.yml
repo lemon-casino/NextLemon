@@ -1,0 +1,101 @@
+name: 'Release'
+
+# 当推送版本 tag 时触发（如 v0.1.0, v1.0.0 等）
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon (M1/M2/M3)
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          # macOS Intel
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+          # Windows
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract tag version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # macOS 需要同时支持 Intel 和 Apple Silicon 架构
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          # 使用 tag 版本作为缓存 key，确保版本更新时刷新缓存
+          shared-key: "tauri-build-${{ steps.get_version.outputs.VERSION }}"
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Update Tauri version from tag
+        run: |
+          cd src-tauri
+          # 更新 Cargo.toml 中的版本
+          sed -i 's/^version = ".*"/version = "${{ steps.get_version.outputs.VERSION }}"/' Cargo.toml
+          
+          # 更新 Cargo.lock 中的版本
+          cargo update --package app --precise ${{ steps.get_version.outputs.VERSION }} || echo "Cargo update might fail if version not in lockfile, continuing..."
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'NextLemon ${{ github.ref_name }}'
+          releaseBody: |
+            ## NextLemon ${{ github.ref_name }}
+            
+            ### 版本: ${{ steps.get_version.outputs.VERSION }}
+            发布日期: ${{ fromJSON(github.event.head_commit).timestamp }}
+            
+            ### 下载链接
+            
+            请根据您的系统下载对应的安装包：
+            
+            - **macOS (Apple Silicon M1/M2/M3)**: `NextLemon_${{ steps.get_version.outputs.VERSION }}_aarch64.dmg`
+            - **macOS (Intel)**: `NextLemon_${{ steps.get_version.outputs.VERSION }}_x64.dmg`
+            - **Windows**: `NextLemon_${{ steps.get_version.outputs.VERSION }}_x64-setup.exe` 或 `.msi`
+            
+            ### 更新说明
+            
+            请查看 CHANGELOG.md 获取详细的更新内容。
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}  # 如果 tag 包含 '-' 则标记为预发布版
+          args: ${{ matrix.args }}
+          projectPath: ./src-tauri
+          includeUpdaterJson: true
