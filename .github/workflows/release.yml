@@ -29,6 +29,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Read app version
+        id: app-version
+        run: |
+          APP_VERSION=$(cat VERSION)
+          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -38,6 +45,9 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Sync version files
+        run: node ./scripts/sync-version.mjs
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -50,7 +60,7 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
           # 版本更新时修改此 key 来强制刷新缓存
-          shared-key: "v0.2.0"
+          shared-key: "v${{ steps.app-version.outputs.app_version }}"
 
       - name: Install frontend dependencies
         run: bun install

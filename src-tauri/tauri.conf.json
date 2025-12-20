@@ -28,7 +28,10 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/**", "$RESOURCE/**"]
+        "scope": [
+          "$APPDATA/**",
+          "$RESOURCE/**"
+        ]
       }
     }
   },
