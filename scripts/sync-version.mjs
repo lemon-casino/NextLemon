@@ -47,6 +47,19 @@ function updateReadmeBadge() {
   }
 }
 
+function updateReleaseWorkflowCacheKey() {
+  const workflowPath = path.join(rootDir, ".github/workflows/release.yml");
+  const content = readFileSync(workflowPath, "utf8");
+  const cacheKeyPattern = /(shared-key:\s*")v?([0-9]+\.[0-9]+\.[0-9]+)("\s*)/;
+  const updated = content.replace(cacheKeyPattern, `$1v${version}$3`);
+
+  if (updated !== content) {
+    writeFileSync(workflowPath, updated);
+    console.log("Updated shared cache key in .github/workflows/release.yml");
+  }
+}
+
 updateTauriConfig();
 updateCargoToml();
 updateReadmeBadge();
+updateReleaseWorkflowCacheKey();
