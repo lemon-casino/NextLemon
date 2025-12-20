@@ -9,7 +9,6 @@ import { isTauriEnvironment } from "@/services/fileStorageService";
 import { toast } from "@/stores/toastStore";
 import { WorkflowControls } from "@/components/workflow/WorkflowControls";
 import logoImage from "@/assets/logo.png";
-import { APP_VERSION } from "@/utils/appVersion";
 
 export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
   const { openSettings, openProviderPanel } = useSettingsStore();
@@ -182,7 +181,7 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
           <img src={logoImage} alt="NextLemon" className="w-8 h-8" />
           <span className="font-semibold text-lg">NextLemon</span>
         </div>
-        <div className="badge badge-ghost badge-sm">v{APP_VERSION}</div>
+        <div className="badge badge-ghost badge-sm">v0.2.0</div>
       </div>
 
       {/* 中间工具 */}

@@ -1,15 +1,14 @@
 {
-  "name": "nextlemon",
+  "name": "nextcreator",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.2.0",
   "license": "AGPL-3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "sync-version": "node scripts/sync-version.mjs"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@google/genai": "^1.32.0",
