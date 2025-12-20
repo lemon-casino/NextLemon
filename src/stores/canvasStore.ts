@@ -16,7 +16,7 @@ export interface CanvasData {
 }
 
 // 侧边栏视图类型
-export type SidebarView = "canvases" | "nodes" | "prompts";
+export type SidebarView = "canvases" | "nodes" | "prompts" | null;
 
 interface CanvasStore {
   // 画布列表
@@ -50,7 +50,7 @@ export const useCanvasStore = create<CanvasStore>()(
     (set, get) => ({
       canvases: [],
       activeCanvasId: null,
-      sidebarView: "canvases",
+      sidebarView: null,
       // 标记是否已完成数据恢复（hydration）
       _hasHydrated: false,
 
