@@ -1,0 +1,75 @@
+name: 'Release'
+
+# 当推送版本 tag 时触发（如 v0.1.0, v1.0.0 等）
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon (M1/M2/M3)
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          # macOS Intel
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+          # Windows
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # macOS 需要同时支持 Intel 和 Apple Silicon 架构
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          # 版本更新时修改此 key 来强制刷新缓存
+          shared-key: "v0.2.0"
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'NextLemon ${{ github.ref_name }}'
+          releaseBody: |
+            ## NextLemon ${{ github.ref_name }}
+
+            请根据您的系统下载对应的安装包：
+
+            - **macOS (Apple Silicon M1/M2/M3)**: `NextLemon_*_aarch64.dmg`
+            - **macOS (Intel)**: `NextLemon_*_x64.dmg`
+            - **Windows**: `NextLemon_*_x64-setup.exe` 或 `.msi`
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

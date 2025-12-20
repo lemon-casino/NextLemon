@@ -1,0 +1,444 @@
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+// ==================== 视频服务数据结构 ====================
+
+// 创建视频任务参数
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoCreateParams {
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub prompt: String,
+    pub seconds: Option<String>,
+    pub size: Option<String>,
+    pub input_image: Option<String>,  // base64 编码的参考图片
+}
+
+// 视频任务响应
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VideoTaskResult {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+// 视频内容结果
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoContentResult {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_data: Option<String>,  // base64 编码的视频数据
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+// 获取任务状态参数
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoStatusParams {
+    pub base_url: String,
+    pub api_key: String,
+    pub task_id: String,
+}
+
+// API 响应结构
+#[derive(Debug, Deserialize)]
+struct VideoApiResponse {
+    id: Option<String>,
+    status: Option<String>,
+    progress: Option<i32>,
+    error: Option<VideoApiError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VideoApiError {
+    message: Option<String>,
+}
+
+// ==================== 创建视频任务 ====================
+
+#[tauri::command]
+pub async fn video_create_task(params: VideoCreateParams) -> VideoTaskResult {
+    println!("[Rust] video_create_task called");
+    println!("[Rust] base_url: {}", params.base_url);
+    println!("[Rust] model: {}", params.model);
+
+    // 创建 HTTP 客户端
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return VideoTaskResult {
+                success: false,
+                task_id: None,
+                status: None,
+                progress: None,
+                error: Some(format!("创建 HTTP 客户端失败: {}", e)),
+            }
+        }
+    };
+
+    // 构建 multipart form
+    let mut form = reqwest::multipart::Form::new()
+        .text("model", params.model.clone())
+        .text("prompt", params.prompt.clone());
+
+    if let Some(seconds) = params.seconds {
+        form = form.text("seconds", seconds);
+    }
+
+    if let Some(size) = params.size {
+        form = form.text("size", size);
+    }
+
+    // 添加参考图片
+    if let Some(image_base64) = params.input_image {
+        match BASE64.decode(&image_base64) {
+            Ok(image_bytes) => {
+                let part = reqwest::multipart::Part::bytes(image_bytes)
+                    .file_name("reference.png")
+                    .mime_str("image/png")
+                    .unwrap_or_else(|_| reqwest::multipart::Part::bytes(vec![]));
+                form = form.part("input_reference", part);
+            }
+            Err(e) => {
+                println!("[Rust] Failed to decode input image: {}", e);
+            }
+        }
+    }
+
+    // 构建 URL
+    let url = format!(
+        "{}/v1/videos",
+        params.base_url.trim_end_matches('/')
+    );
+    println!("[Rust] Request URL: {}", url);
+
+    // 发送请求
+    println!("[Rust] Sending video create request...");
+    let start_time = std::time::Instant::now();
+
+    let response = match client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", params.api_key))
+        .multipart(form)
+        .send()
+        .await
+    {
+        Ok(r) => {
+            println!("[Rust] Response received in {:?}", start_time.elapsed());
+            r
+        },
+        Err(e) => {
+            println!("[Rust] Request failed: {}", e);
+            let error_msg = if e.is_timeout() {
+                "请求超时，请稍后重试".to_string()
+            } else if e.is_connect() {
+                "无法连接到服务器，请检查网络".to_string()
+            } else {
+                format!("请求失败: {}", e)
+            };
+            return VideoTaskResult {
+                success: false,
+                task_id: None,
+                status: None,
+                progress: None,
+                error: Some(error_msg),
+            };
+        }
+    };
+
+    // 检查 HTTP 状态码
+    let status = response.status();
+    let response_text = match response.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            return VideoTaskResult {
+                success: false,
+                task_id: None,
+                status: None,
+                progress: None,
+                error: Some(format!("获取响应失败: {}", e)),
+            };
+        }
+    };
+
+    if !status.is_success() {
+        println!("[Rust] Error response: {}", response_text);
+        return VideoTaskResult {
+            success: false,
+            task_id: None,
+            status: None,
+            progress: None,
+            error: Some(format!("API 返回错误 ({}): {}", status, response_text)),
+        };
+    }
+
+    // 解析响应
+
+    let api_response: VideoApiResponse = match serde_json::from_str(&response_text) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("[Rust] Failed to parse JSON: {}", e);
+            return VideoTaskResult {
+                success: false,
+                task_id: None,
+                status: None,
+                progress: None,
+                error: Some(format!("解析响应失败: {}", e)),
+            };
+        }
+    };
+
+    // 检查 API 错误
+    if let Some(err) = api_response.error {
+        return VideoTaskResult {
+            success: false,
+            task_id: None,
+            status: None,
+            progress: None,
+            error: err.message,
+        };
+    }
+
+    let task_id = api_response.id;
+    if task_id.is_none() {
+        return VideoTaskResult {
+            success: false,
+            task_id: None,
+            status: None,
+            progress: None,
+            error: Some("API 未返回任务 ID".to_string()),
+        };
+    }
+
+    println!("[Rust] Video task created: {:?}", task_id);
+
+    VideoTaskResult {
+        success: true,
+        task_id,
+        status: api_response.status,
+        progress: api_response.progress,
+        error: None,
+    }
+}
+
+// ==================== 获取视频任务状态 ====================
+
+#[tauri::command]
+pub async fn video_get_status(params: VideoStatusParams) -> VideoTaskResult {
+    println!("[Rust] video_get_status called, task_id: {}", params.task_id);
+
+    // 创建 HTTP 客户端
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return VideoTaskResult {
+                success: false,
+                task_id: None,
+                status: None,
+                progress: None,
+                error: Some(format!("创建 HTTP 客户端失败: {}", e)),
+            }
+        }
+    };
+
+    // 构建 URL
+    let url = format!(
+        "{}/v1/videos/{}",
+        params.base_url.trim_end_matches('/'),
+        params.task_id
+    );
+
+    // 发送请求
+    let response = match client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", params.api_key))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let error_msg = if e.is_timeout() {
+                "请求超时".to_string()
+            } else if e.is_connect() {
+                "无法连接到服务器".to_string()
+            } else {
+                format!("请求失败: {}", e)
+            };
+            return VideoTaskResult {
+                success: false,
+                task_id: None,
+                status: None,
+                progress: None,
+                error: Some(error_msg),
+            };
+        }
+    };
+
+    // 检查 HTTP 状态码
+    let status = response.status();
+    let response_text = match response.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            return VideoTaskResult {
+                success: false,
+                task_id: None,
+                status: None,
+                progress: None,
+                error: Some(format!("获取响应失败: {}", e)),
+            };
+        }
+    };
+
+    if !status.is_success() {
+        return VideoTaskResult {
+            success: false,
+            task_id: None,
+            status: None,
+            progress: None,
+            error: Some(format!("API 返回错误 ({}): {}", status, response_text)),
+        };
+    }
+
+    // 解析响应
+    let api_response: VideoApiResponse = match serde_json::from_str(&response_text) {
+        Ok(r) => r,
+        Err(e) => {
+            return VideoTaskResult {
+                success: false,
+                task_id: None,
+                status: None,
+                progress: None,
+                error: Some(format!("解析响应失败: {}", e)),
+            };
+        }
+    };
+
+    // 检查 API 错误
+    if let Some(err) = api_response.error {
+        return VideoTaskResult {
+            success: false,
+            task_id: Some(params.task_id),
+            status: api_response.status,
+            progress: api_response.progress,
+            error: err.message,
+        };
+    }
+
+    VideoTaskResult {
+        success: true,
+        task_id: Some(params.task_id),
+        status: api_response.status,
+        progress: api_response.progress,
+        error: None,
+    }
+}
+
+// ==================== 获取视频内容 ====================
+
+#[tauri::command]
+pub async fn video_get_content(params: VideoStatusParams) -> VideoContentResult {
+    println!("[Rust] video_get_content called, task_id: {}", params.task_id);
+
+    // 创建 HTTP 客户端（视频下载可能需要更长时间）
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return VideoContentResult {
+                success: false,
+                video_data: None,
+                error: Some(format!("创建 HTTP 客户端失败: {}", e)),
+            }
+        }
+    };
+
+    // 构建 URL
+    let url = format!(
+        "{}/v1/videos/{}/content",
+        params.base_url.trim_end_matches('/'),
+        params.task_id
+    );
+    println!("[Rust] Fetching video content from: {}", url);
+
+    // 发送请求
+    let start_time = std::time::Instant::now();
+    let response = match client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", params.api_key))
+        .send()
+        .await
+    {
+        Ok(r) => {
+            println!("[Rust] Response headers received in {:?}", start_time.elapsed());
+            r
+        },
+        Err(e) => {
+            let error_msg = if e.is_timeout() {
+                "下载超时，请稍后重试".to_string()
+            } else if e.is_connect() {
+                "无法连接到服务器".to_string()
+            } else {
+                format!("请求失败: {}", e)
+            };
+            return VideoContentResult {
+                success: false,
+                video_data: None,
+                error: Some(error_msg),
+            };
+        }
+    };
+
+    // 检查 HTTP 状态码
+    let status = response.status();
+    if !status.is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return VideoContentResult {
+            success: false,
+            video_data: None,
+            error: Some(format!("获取视频失败 ({}): {}", status, error_text)),
+        };
+    }
+
+    // 获取视频数据
+    let video_bytes = match response.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            return VideoContentResult {
+                success: false,
+                video_data: None,
+                error: Some(format!("下载视频失败: {}", e)),
+            };
+        }
+    };
+
+    println!("[Rust] Video downloaded: {} bytes in {:?}", video_bytes.len(), start_time.elapsed());
+
+    // 转换为 base64
+    let video_base64 = BASE64.encode(&video_bytes);
+
+    VideoContentResult {
+        success: true,
+        video_data: Some(video_base64),
+        error: None,
+    }
+}
