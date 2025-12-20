@@ -5,6 +5,8 @@ import {
   Save,
   RotateCcw,
   Server,
+  HardDrive,
+  Keyboard,
   Github,
   ExternalLink,
   RefreshCw,
@@ -15,6 +17,7 @@ import {
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useStorageManagementStore } from "@/stores/storageManagementStore";
 import { Select } from "@/components/ui/Select";
 import { useModal, getModalAnimationClasses } from "@/hooks/useModal";
 import type { AppSettings } from "@/types";
@@ -37,7 +40,9 @@ export function SettingsPanel() {
     updateSettings,
     resetSettings,
     openProviderPanel,
+    openHelp,
   } = useSettingsStore();
+  const { openModal: openStorageModal } = useStorageManagementStore();
   const [localTheme, setLocalTheme] = useState<AppSettings["theme"]>(
     settings.theme
   );
@@ -72,6 +77,16 @@ export function SettingsPanel() {
   const handleOpenProviders = () => {
     closeSettings();
     openProviderPanel();
+  };
+
+  const handleOpenStorage = () => {
+    closeSettings();
+    openStorageModal();
+  };
+
+  const handleOpenHelp = () => {
+    closeSettings();
+    openHelp();
   };
 
   const handleCheckUpdate = async () => {
@@ -189,6 +204,44 @@ export function SettingsPanel() {
                 <div className="font-medium">供应商管理</div>
                 <div className="text-sm text-base-content/50">
                   配置 API 供应商和节点分配
+                </div>
+              </div>
+            </div>
+            <div className="text-base-content/30">→</div>
+          </div>
+
+          {/* 存储管理入口 */}
+          <div
+            className="flex items-center justify-between p-4 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors"
+            onClick={handleOpenStorage}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-secondary/10 rounded-lg flex items-center justify-center">
+                <HardDrive className="w-5 h-5 text-secondary" />
+              </div>
+              <div>
+                <div className="font-medium">存储管理</div>
+                <div className="text-sm text-base-content/50">
+                  管理本地存储和空间占用
+                </div>
+              </div>
+            </div>
+            <div className="text-base-content/30">→</div>
+          </div>
+
+          {/* 帮助入口 */}
+          <div
+            className="flex items-center justify-between p-4 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors"
+            onClick={handleOpenHelp}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
+                <Keyboard className="w-5 h-5 text-accent" />
+              </div>
+              <div>
+                <div className="font-medium">帮助与快捷键</div>
+                <div className="text-sm text-base-content/50">
+                  查看常用快捷键和使用指南
                 </div>
               </div>
             </div>

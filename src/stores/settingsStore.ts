@@ -59,6 +59,11 @@ interface SettingsStore extends SettingsState {
   isProviderPanelOpen: boolean;
   openProviderPanel: () => void;
   closeProviderPanel: () => void;
+
+  // 帮助面板状态
+  isHelpOpen: boolean;
+  openHelp: () => void;
+  closeHelp: () => void;
 }
 
 // 生成唯一 ID
@@ -157,6 +162,11 @@ export const useSettingsStore = create<SettingsStore>()(
 
       closeProviderPanel: () =>
         set({ isProviderPanelOpen: false }),
+
+      // 帮助面板状态
+      isHelpOpen: false,
+      openHelp: () => set({ isHelpOpen: true }),
+      closeHelp: () => set({ isHelpOpen: false }),
     }),
     {
       name: "next-creator-settings",

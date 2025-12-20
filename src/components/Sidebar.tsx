@@ -15,9 +15,11 @@ import {
   BookText,
   Eye,
   User,
+  Settings,
 } from "lucide-react";
 import { useCanvasStore, type SidebarView } from "@/stores/canvasStore";
 import { useUserPromptStore, type UserPrompt, type CreatePromptInput } from "@/stores/userPromptStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { nodeCategories, nodeIconMap, nodeIconColors } from "@/config/nodeConfig";
 import { promptCategories, promptIconMap, promptIconColors, type PromptItem } from "@/config/promptConfig";
 import { Input } from "@/components/ui/Input";
@@ -48,7 +50,12 @@ export function Sidebar({ onDragStart }: SidebarProps) {
     duplicateCanvas,
   } = useCanvasStore();
 
-  // 画布相关状态
+  const { openSettings } = useSettingsStore();
+
+  // ... (rest of the state and handlers remain same) ...
+
+  // ... (inside return) ...
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -233,7 +240,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                 )}
                 <button
                   className={`
-                  w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300
+                  w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 cursor-pointer
                   ${isActive
                       ? "bg-primary text-primary-content shadow-lg scale-105"
                       : "hover:bg-base-100/80 text-base-content/60 hover:text-base-content hover:shadow-md hover:scale-105"
@@ -247,6 +254,17 @@ export function Sidebar({ onDragStart }: SidebarProps) {
               </div>
             );
           })}
+
+          {/* 底部设置按钮 */}
+          <div className="mt-auto relative group w-full flex justify-center">
+            <button
+              className="w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 cursor-pointer hover:bg-base-100/80 text-base-content/60 hover:text-base-content hover:shadow-md hover:scale-105"
+              data-tip="设置"
+              onClick={openSettings}
+            >
+              <Settings className="w-5 h-5 transition-transform duration-500 group-hover:rotate-90" />
+            </button>
+          </div>
         </div>
 
         {/* 内容抽屉 Drawer - 漂浮玻璃面板 */}

@@ -1,9 +1,7 @@
 import { useState } from "react";
-import { Settings, Trash2, Download, Upload, Undo2, Redo2, HelpCircle, Server, HardDrive, AlertTriangle } from "lucide-react";
+import { Trash2, Download, Upload, Undo2, Redo2, AlertTriangle } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useSettingsStore } from "@/stores/settingsStore";
 import { useFlowStore } from "@/stores/flowStore";
-import { useStorageManagementStore } from "@/stores/storageManagementStore";
 import { useModal, getModalAnimationClasses } from "@/hooks/useModal";
 import { isTauriEnvironment } from "@/services/fileStorageService";
 import { toast } from "@/stores/toastStore";
@@ -11,8 +9,7 @@ import { WorkflowControls } from "@/components/workflow/WorkflowControls";
 import { APP_VERSION } from "@/utils/version";
 import logoImage from "@/assets/logo.png";
 
-export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
-  const { openSettings, openProviderPanel } = useSettingsStore();
+export function Toolbar() {
   const clearCanvas = useFlowStore((state) => state.clearCanvas);
   const setNodes = useFlowStore((state) => state.setNodes);
   const setEdges = useFlowStore((state) => state.setEdges);
@@ -20,7 +17,6 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
   const redo = useFlowStore((state) => state.redo);
   const canUndo = useFlowStore((state) => state.canUndo);
   const canRedo = useFlowStore((state) => state.canRedo);
-  const { openModal: openStorageModal } = useStorageManagementStore();
 
   // 清空画布确认对话框状态
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -239,29 +235,7 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
         </div>
       </div>
 
-      {/* 右侧设置 */}
-      <div className="flex items-center gap-1 pr-1">
-        <div className="tooltip tooltip-bottom" data-tip="存储管理">
-          <button className="btn btn-ghost btn-sm btn-circle w-9 h-9 min-h-9" onClick={openStorageModal}>
-            <HardDrive className="w-5 h-5 opacity-70" />
-          </button>
-        </div>
-        <div className="tooltip tooltip-bottom" data-tip="供应商管理">
-          <button className="btn btn-ghost btn-sm btn-circle w-9 h-9 min-h-9" onClick={openProviderPanel}>
-            <Server className="w-5 h-5 opacity-70" />
-          </button>
-        </div>
-        <div className="tooltip tooltip-bottom" data-tip="帮助 (?)">
-          <button className="btn btn-ghost btn-sm btn-circle w-9 h-9 min-h-9" onClick={onOpenHelp}>
-            <HelpCircle className="w-5 h-5 opacity-70" />
-          </button>
-        </div>
-        <div className="tooltip tooltip-bottom" data-tip="设置">
-          <button className="btn btn-ghost btn-sm btn-circle w-9 h-9 min-h-9" onClick={openSettings}>
-            <Settings className="w-5 h-5 opacity-70 transition-transform duration-500 hover:rotate-90" />
-          </button>
-        </div>
-      </div>
+
 
       {/* 清空画布确认对话框 */}
       {showClearConfirm && (

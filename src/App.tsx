@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { Toolbar } from "@/components/Toolbar";
@@ -18,9 +18,7 @@ function App() {
   const { activeCanvasId, getActiveCanvas, createCanvas, updateCanvasData, canvases, _hasHydrated } = useCanvasStore();
   const { nodes, edges, setNodes, setEdges } = useFlowStore();
   const theme = useSettingsStore((state) => state.settings.theme);
-
-  // 帮助面板状态
-  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const { isHelpOpen, openHelp, closeHelp } = useSettingsStore();
 
   // 用于追踪是否正在切换画布，避免循环更新
   const isLoadingCanvasRef = useRef(false);
@@ -104,13 +102,17 @@ function App() {
 
       if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
         e.preventDefault();
-        setIsHelpOpen((prev) => !prev);
+        if (isHelpOpen) {
+          closeHelp();
+        } else {
+          openHelp();
+        }
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [isHelpOpen, openHelp, closeHelp]);
 
   // 拖拽开始处理
   const onDragStart = useCallback(
@@ -133,7 +135,7 @@ function App() {
     <ReactFlowProvider>
       <div className="flex flex-col h-screen w-screen overflow-hidden">
         {/* 顶部工具栏 */}
-        <Toolbar onOpenHelp={() => setIsHelpOpen(true)} />
+        <Toolbar />
 
         {/* 主体内容 */}
         <div className="flex flex-1 overflow-hidden">
@@ -151,7 +153,7 @@ function App() {
         <ProviderPanel />
 
         {/* 快捷键帮助面板 */}
-        <KeyboardShortcutsPanel isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+        <KeyboardShortcutsPanel isOpen={isHelpOpen} onClose={closeHelp} />
 
         {/* 存储管理弹窗 */}
         <StorageManagementModal />
