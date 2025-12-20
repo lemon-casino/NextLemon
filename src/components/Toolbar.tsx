@@ -21,7 +21,7 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
   const canRedo = useFlowStore((state) => state.canRedo);
   const { openModal: openStorageModal } = useStorageManagementStore();
 
-  // 清空画布确认对话框状态
+  // Clear canvas confirmation state
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const handleClearCanvas = () => {
@@ -29,28 +29,29 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
     setShowClearConfirm(false);
   };
 
-  // 清理节点数据中的 base64 图片，仅保留文件路径
+  // Clean base64 image data from nodes for export
+  // Keeps only file paths to reduce file size and allow sharing
   const cleanNodeDataForExport = (nodes: ReturnType<typeof useFlowStore.getState>["nodes"]) => {
     return nodes.map((node) => {
       const cleanedNode = { ...node, data: { ...node.data } };
       const data = cleanedNode.data;
 
-      // 清理 ImageInputNode 的 base64 数据
+      // Clean ImageInputNode base64
       if ("imageData" in data && "imagePath" in data) {
         delete data.imageData;
       }
 
-      // 清理 ImageGeneratorNode 的 base64 数据
+      // Clean ImageGeneratorNode base64
       if ("outputImage" in data && "outputImagePath" in data) {
         delete data.outputImage;
       }
 
-      // 清理 PPTContentNode 的 pages 数据中的 base64
+      // Clean PPTContentNode pages base64
       if ("pages" in data && Array.isArray(data.pages)) {
         data.pages = data.pages.map((page: Record<string, unknown>) => {
           const cleanedPage = { ...page };
 
-          // 清理 result 中的 base64
+          // Clean result base64
           if (cleanedPage.result && typeof cleanedPage.result === "object") {
             const result = cleanedPage.result as Record<string, unknown>;
             const cleanedResult = { ...result };
@@ -59,7 +60,7 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
             cleanedPage.result = cleanedResult;
           }
 
-          // 清理手动上传图片的 base64
+          // Clean manual upload base64
           if (cleanedPage.manualImagePath) delete cleanedPage.manualImage;
           if (cleanedPage.manualThumbnailPath) delete cleanedPage.manualThumbnail;
 
@@ -71,10 +72,9 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
     });
   };
 
-  // 导出工作流
+  // Export Workflow
   const handleExport = async () => {
     const { nodes, edges } = useFlowStore.getState();
-    // 清理 base64 数据，仅保留文件路径（同设备可恢复）
     const cleanedNodes = cleanNodeDataForExport(nodes);
     const data = { nodes: cleanedNodes, edges };
     const jsonStr = JSON.stringify(data, null, 2);
@@ -92,14 +92,14 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
 
         if (filePath) {
           await writeTextFile(filePath, jsonStr);
-          toast.success(`工作流已保存到: ${filePath.split("/").pop()}`);
+          toast.success(`Workflow saved to: ${filePath.split("/").pop()}`);
         }
       } catch (error) {
-        console.error("导出工作流失败:", error);
-        toast.error(`导出失败: ${error instanceof Error ? error.message : "未知错误"}`);
+        console.error("Export failed:", error);
+        toast.error(`Export failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     } else {
-      // 浏览器环境
+      // Browser environment
       const blob = new Blob([jsonStr], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -109,11 +109,11 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      toast.success("工作流下载已开始");
+      toast.success("Workflow download started");
     }
   };
 
-  // 导入工作流
+  // Import Workflow
   const handleImport = async () => {
     if (isTauriEnvironment()) {
       try {
@@ -131,21 +131,21 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
           if (data.nodes && data.edges) {
             setNodes(data.nodes);
             setEdges(data.edges);
-            toast.success("工作流导入成功");
+            toast.success("Workflow imported successfully");
           } else {
-            toast.error("无效的工作流文件");
+            toast.error("Invalid workflow file");
           }
         }
       } catch (error) {
-        console.error("导入工作流失败:", error);
-        toast.error(`导入失败: ${error instanceof Error ? error.message : "未知错误"}`);
+        console.error("Import failed:", error);
+        toast.error(`Import failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     } else {
-      // 浏览器环境
+      // Browser environment
       const input = document.createElement("input");
       input.type = "file";
       input.accept = ".json";
-      input.onchange = (e) => {
+      input.onchange = (e: Event) => {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (!file) return;
 
@@ -156,12 +156,12 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
             if (data.nodes && data.edges) {
               setNodes(data.nodes);
               setEdges(data.edges);
-              toast.success("工作流导入成功");
+              toast.success("Workflow imported successfully");
             } else {
-              toast.error("无效的工作流文件");
+              toast.error("Invalid workflow file");
             }
           } catch {
-            toast.error("无效的工作流文件");
+            toast.error("Invalid workflow file");
           }
         };
         reader.readAsText(file);
@@ -174,92 +174,92 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
   const cmdKey = isMac ? "⌘" : "Ctrl";
 
   return (
-    <div className="flex items-center justify-between px-4 py-2 bg-base-100 border-b border-base-300">
-      {/* 左侧 Logo */}
+    <div className="flex items-center justify-between px-6 py-3 glass-panel rounded-full mt-4 mx-auto max-w-5xl transition-all duration-300 hover:shadow-2xl hover:border-white/20">
+      {/* Left Logo */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <img src={logoImage} alt="NextLemon" className="w-8 h-8" />
-          <span className="font-semibold text-lg">NextLemon</span>
+          <img src={logoImage} alt="NextLemon" className="w-8 h-8 drop-shadow-md" />
+          <span className="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">NextLemon</span>
         </div>
-        <div className="badge badge-ghost badge-sm">v0.2.0</div>
+        <div className="badge badge-ghost badge-sm border-white/10 bg-white/5 backdrop-blur-md">v0.2.0</div>
       </div>
 
-      {/* 中间工具 */}
+      {/* Middle Tools */}
       <div className="flex items-center gap-2">
-        {/* 撤销/重做 */}
-        <div className="tooltip tooltip-bottom" data-tip={`撤销 (${cmdKey}+Z)`}>
+        {/* Undo/Redo */}
+        <div className="tooltip tooltip-bottom" data-tip={`Undo (${cmdKey}+Z)`}>
           <button
-            className="btn btn-ghost btn-sm btn-square"
+            className="btn btn-ghost btn-sm btn-circle glass-btn"
             onClick={undo}
             disabled={!canUndo()}
           >
             <Undo2 className="w-4 h-4" />
           </button>
         </div>
-        <div className="tooltip tooltip-bottom" data-tip={`重做 (${cmdKey}+Shift+Z)`}>
+        <div className="tooltip tooltip-bottom" data-tip={`Redo (${cmdKey}+Shift+Z)`}>
           <button
-            className="btn btn-ghost btn-sm btn-square"
+            className="btn btn-ghost btn-sm btn-circle glass-btn"
             onClick={redo}
             disabled={!canRedo()}
           >
             <Redo2 className="w-4 h-4" />
           </button>
         </div>
-        <div className="divider divider-horizontal mx-1" />
+        <div className="w-px h-6 bg-white/10 mx-2" />
 
-        {/* 工作流控制 */}
+        {/* Workflow Controls */}
         <WorkflowControls />
-        <div className="divider divider-horizontal mx-1" />
+        <div className="w-px h-6 bg-white/10 mx-2" />
 
-        <div className="tooltip tooltip-bottom" data-tip="导入工作流">
-          <button className="btn btn-ghost btn-sm gap-2" onClick={handleImport}>
+        <div className="tooltip tooltip-bottom" data-tip="Import Workflow">
+          <button className="btn btn-ghost btn-sm gap-2 glass-btn rounded-full px-4" onClick={handleImport}>
             <Upload className="w-4 h-4" />
-            导入
+            <span className="hidden sm:inline">Import</span>
           </button>
         </div>
-        <div className="tooltip tooltip-bottom" data-tip="导出工作流">
-          <button className="btn btn-ghost btn-sm gap-2" onClick={handleExport}>
+        <div className="tooltip tooltip-bottom" data-tip="Export Workflow">
+          <button className="btn btn-ghost btn-sm gap-2 glass-btn rounded-full px-4" onClick={handleExport}>
             <Download className="w-4 h-4" />
-            导出
+            <span className="hidden sm:inline">Export</span>
           </button>
         </div>
-        <div className="divider divider-horizontal mx-1" />
-        <div className="tooltip tooltip-bottom" data-tip="清空画布">
+        <div className="w-px h-6 bg-white/10 mx-2" />
+        <div className="tooltip tooltip-bottom" data-tip="Clear Canvas">
           <button
-            className="btn btn-ghost btn-sm text-error gap-2"
+            className="btn btn-ghost btn-sm text-error/80 hover:text-error gap-2 glass-btn rounded-full px-4 hover:bg-error/10"
             onClick={() => setShowClearConfirm(true)}
           >
             <Trash2 className="w-4 h-4" />
-            清空
+            <span className="hidden sm:inline">Clear</span>
           </button>
         </div>
       </div>
 
-      {/* 右侧设置 */}
-      <div className="flex items-center gap-1">
-        <div className="tooltip tooltip-bottom" data-tip="存储管理">
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={openStorageModal}>
-            <HardDrive className="w-5 h-5" />
+      {/* Right Settings */}
+      <div className="flex items-center gap-2 pl-4 border-l border-white/10">
+        <div className="tooltip tooltip-bottom" data-tip="Storage Management">
+          <button className="btn btn-ghost btn-sm btn-circle glass-btn" onClick={openStorageModal}>
+            <HardDrive className="w-4 h-4" />
           </button>
         </div>
-        <div className="tooltip tooltip-bottom" data-tip="供应商管理">
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={openProviderPanel}>
-            <Server className="w-5 h-5" />
+        <div className="tooltip tooltip-bottom" data-tip="Provider Settings">
+          <button className="btn btn-ghost btn-sm btn-circle glass-btn" onClick={openProviderPanel}>
+            <Server className="w-4 h-4" />
           </button>
         </div>
-        <div className="tooltip tooltip-bottom" data-tip="帮助 (?)">
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={onOpenHelp}>
-            <HelpCircle className="w-5 h-5" />
+        <div className="tooltip tooltip-bottom" data-tip="Help">
+          <button className="btn btn-ghost btn-sm btn-circle glass-btn" onClick={onOpenHelp}>
+            <HelpCircle className="w-4 h-4" />
           </button>
         </div>
-        <div className="tooltip tooltip-bottom" data-tip="设置">
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={openSettings}>
-            <Settings className="w-5 h-5" />
+        <div className="tooltip tooltip-bottom" data-tip="Settings">
+          <button className="btn btn-ghost btn-sm btn-circle glass-btn" onClick={openSettings}>
+            <Settings className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* 清空画布确认对话框 */}
+      {/* Clear Confirmation Modal */}
       {showClearConfirm && (
         <ClearConfirmModal
           onConfirm={handleClearCanvas}
@@ -270,37 +270,37 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
   );
 }
 
-// 清空确认对话框组件
+// Clear Confirmation Modal Component
 interface ClearConfirmModalProps {
   onConfirm: () => void;
   onClose: () => void;
 }
 
 function ClearConfirmModal({ onConfirm, onClose }: ClearConfirmModalProps) {
-  // 使用统一的 modal hook
+  // Use unified modal hook
   const { isVisible, isClosing, handleClose, handleBackdropClick } = useModal({
     isOpen: true,
     onClose,
   });
 
-  // 获取动画类名
+  // Get animation classes
   const { backdropClasses, contentClasses } = getModalAnimationClasses(isVisible, isClosing);
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-      {/* 背景遮罩 */}
+      {/* Backdrop */}
       <div
         className={`
-          absolute inset-0
+          absolute inset-0 bg-black/50 backdrop-blur-sm
           transition-all duration-200 ease-out
           ${backdropClasses}
         `}
         onClick={handleBackdropClick}
       />
-      {/* Modal 内容 */}
+      {/* Modal Content */}
       <div
         className={`
-          relative bg-base-100 rounded-xl p-5 mx-4 max-w-sm shadow-xl
+          relative glass-panel rounded-xl p-5 mx-4 max-w-sm shadow-xl border border-error/20
           transition-all duration-200 ease-out
           ${contentClasses}
         `}
@@ -309,23 +309,23 @@ function ClearConfirmModal({ onConfirm, onClose }: ClearConfirmModalProps) {
           <div className="p-2 bg-error/10 rounded-lg">
             <AlertTriangle className="w-5 h-5 text-error" />
           </div>
-          <h3 className="font-semibold">确认清空</h3>
+          <h3 className="font-semibold text-white">Confirm Clear</h3>
         </div>
-        <p className="text-sm text-base-content/70 mb-5">
-          确定要清空画布吗？这将删除画布上的所有节点和连线，此操作不可撤销。
+        <p className="text-sm text-white/70 mb-5">
+          Are you sure you want to clear the canvas? This will remove all nodes and edges. This action cannot be undone.
         </p>
         <div className="flex gap-2 justify-end">
           <button
-            className="btn btn-ghost btn-sm"
+            className="glass-btn btn-sm"
             onClick={handleClose}
           >
-            取消
+            Cancel
           </button>
           <button
             className="btn btn-error btn-sm"
             onClick={onConfirm}
           >
-            确认清空
+            Clear Canvas
           </button>
         </div>
       </div>

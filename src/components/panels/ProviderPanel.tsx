@@ -23,11 +23,11 @@ const protocolLabels: Record<ProviderProtocol, string> = {
 
 // 节点类型配置
 const nodeTypeConfig: { key: keyof NodeProviderMapping; label: string; description: string }[] = [
-  { key: "imageGeneratorPro", label: "NanoBanana Pro", description: "高质量图片生成 / PPT 页面图片生成" },
-  { key: "imageGeneratorFast", label: "NanoBanana", description: "快速图片生成节点" },
-  { key: "videoGenerator", label: "视频生成", description: "Sora 视频生成节点" },
-  { key: "llmContent", label: "LLM 内容生成", description: "大语言模型内容生成节点" },
-  { key: "llm", label: "PPT 大纲生成", description: "PPT 内容节点的大纲生成部分" },
+  { key: "imageGeneratorPro", label: "NanoBanana Pro", description: "High Quality Image / PPT" },
+  { key: "imageGeneratorFast", label: "NanoBanana", description: "Fast Image Generator" },
+  { key: "videoGenerator", label: "Video Generator", description: "Sora Video Generator" },
+  { key: "llmContent", label: "LLM Content", description: "Text Generation Node" },
+  { key: "llm", label: "PPT Outline", description: "PPT Outline Generation" },
 ];
 
 export function ProviderPanel() {
@@ -107,7 +107,7 @@ export function ProviderPanel() {
       {/* 背景遮罩 */}
       <div
         className={`
-          absolute inset-0
+          absolute inset-0 bg-black/40 backdrop-blur-sm
           transition-all duration-200 ease-out
           ${backdropClasses}
         `}
@@ -116,67 +116,67 @@ export function ProviderPanel() {
       {/* Modal 内容 */}
       <div
         className={`
-          relative bg-base-100 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] flex flex-col
-          transition-all duration-200 ease-out
+          relative glass-panel rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] flex flex-col
+          transition-all duration-200 ease-out border border-white/10
           ${contentClasses}
         `}
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-base-300">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
           <div className="flex items-center gap-2">
             <Server className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold">供应商管理</h2>
+            <h2 className="text-lg font-outfit font-semibold text-white">Providers</h2>
           </div>
           <button
-            className="btn btn-ghost btn-sm btn-circle"
+            className="glass-btn btn-square btn-sm rounded-full text-white/70 hover:text-white"
             onClick={handleClose}
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* 内容 - 可滚动 */}
-        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+        <div className="p-6 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
           {/* 供应商列表区域 */}
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-base-content/70 uppercase tracking-wider">
-              供应商列表
+            <h3 className="text-xs font-semibold text-white/40 uppercase tracking-wider">
+              Provider List
             </h3>
 
             {/* 供应商卡片列表 */}
             {providers.length === 0 ? (
-              <div className="text-center py-8 text-base-content/50">
-                <Server className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p>暂无供应商</p>
-                <p className="text-sm">点击下方按钮添加</p>
+              <div className="text-center py-8 text-white/30 border border-dashed border-white/10 rounded-xl bg-white/5">
+                <Server className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No providers configured</p>
+                <p className="text-xs mt-1">Click below to add one</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {providers.map((provider) => (
                   <div
                     key={provider.id}
-                    className="flex items-center justify-between p-3 bg-base-200 rounded-lg"
+                    className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 hover:border-white/10 transition-colors"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">{provider.name}</span>
-                        <span className="px-1.5 py-0.5 text-xs rounded bg-base-300 text-base-content/70 shrink-0">
+                        <span className="font-medium truncate text-white/90">{provider.name}</span>
+                        <span className="px-1.5 py-0.5 text-[10px] rounded bg-white/10 text-white/60 shrink-0 border border-white/5">
                           {protocolLabels[provider.protocol] || "Google"}
                         </span>
                       </div>
-                      <div className="text-sm text-base-content/50 truncate">
+                      <div className="text-xs text-white/40 truncate font-mono mt-0.5">
                         {provider.baseUrl}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 ml-2">
                       <button
-                        className="btn btn-ghost btn-xs btn-square"
+                        className="glass-btn btn-xs btn-square opacity-70 hover:opacity-100"
                         onClick={() => setEditingProvider(provider)}
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        className="btn btn-ghost btn-xs btn-square text-error"
+                        className="glass-btn btn-xs btn-square text-error opacity-70 hover:opacity-100 hover:text-error hover:bg-error/10"
                         onClick={() => handleDeleteProvider(provider)}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -189,39 +189,39 @@ export function ProviderPanel() {
 
             {/* 添加供应商按钮 */}
             <button
-              className="btn btn-outline btn-sm w-full gap-2"
+              className="glass-btn btn-sm w-full gap-2 border-dashed border-white/20 hover:border-white/40 hover:bg-white/5"
               onClick={() => setIsAddingProvider(true)}
             >
               <Plus className="w-4 h-4" />
-              添加供应商
+              Add Provider
             </button>
           </div>
 
           {/* 分隔线 */}
-          <div className="divider"></div>
+          <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
 
           {/* 节点配置区域 */}
           <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-base-content/70 uppercase tracking-wider">
-              节点配置
+            <h3 className="text-xs font-semibold text-white/40 uppercase tracking-wider">
+              Node Configuration
             </h3>
 
             {providers.length === 0 ? (
-              <div className="text-center py-4 text-base-content/50 text-sm">
-                请先添加供应商
+              <div className="text-center py-4 text-white/30 text-xs italic">
+                Please add a provider first
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {nodeTypeConfig.map(({ key, label, description }) => (
                   <div key={key} className="form-control">
                     <label className="label py-1">
-                      <span className="label-text font-medium">{label}</span>
+                      <span className="label-text font-medium text-white/80">{label}</span>
                     </label>
                     <Select
                       value={localNodeProviders[key] || ""}
-                      placeholder="未配置"
+                      placeholder="Not Configured"
                       options={[
-                        { value: "", label: "未配置" },
+                        { value: "", label: "Not Configured" },
                         ...providers.map((provider) => ({
                           value: provider.id,
                           label: `${provider.name} (${protocolLabels[provider.protocol] || "Google"})`,
@@ -235,7 +235,7 @@ export function ProviderPanel() {
                       }
                     />
                     <label className="label py-0.5">
-                      <span className="label-text-alt text-base-content/50">
+                      <span className="label-text-alt text-white/30 text-xs">
                         {description}
                       </span>
                     </label>
@@ -247,13 +247,13 @@ export function ProviderPanel() {
         </div>
 
         {/* 底部 */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-base-300 bg-base-200/50">
-          <button className="btn btn-ghost" onClick={handleClose}>
-            取消
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/10 bg-black/20">
+          <button className="glass-btn px-4" onClick={handleClose}>
+            Cancel
           </button>
-          <button className="btn btn-primary gap-2" onClick={handleSave}>
+          <button className="btn btn-primary gap-2 shadow-lg shadow-primary/20" onClick={handleSave}>
             <Save className="w-4 h-4" />
-            保存
+            Save Configuration
           </button>
         </div>
       </div>
@@ -331,7 +331,7 @@ function ProviderEditModal({ provider, onSave, onClose }: ProviderEditModalProps
       {/* 背景遮罩 */}
       <div
         className={`
-          absolute inset-0
+          absolute inset-0 bg-black/50 backdrop-blur-sm
           transition-all duration-200 ease-out
           ${backdropClasses}
         `}
@@ -340,35 +340,35 @@ function ProviderEditModal({ provider, onSave, onClose }: ProviderEditModalProps
       {/* Modal 内容 */}
       <div
         className={`
-          relative bg-base-100 rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden
+          relative glass-panel rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden border border-white/10
           transition-all duration-200 ease-out
           ${contentClasses}
         `}
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-base-300">
-          <h3 className="font-semibold">
-            {isEditing ? "编辑供应商" : "添加供应商"}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-white/5">
+          <h3 className="font-semibold text-white">
+            {isEditing ? "Edit Provider" : "Add Provider"}
           </h3>
           <button
-            className="btn btn-ghost btn-sm btn-circle"
+            className="glass-btn btn-xs btn-square rounded-full text-white/50 hover:text-white"
             onClick={handleClose}
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* 协议类型选择 Tab */}
         <div className="px-5 pt-4">
-          <div className="flex bg-base-200 rounded-lg p-1">
+          <div className="flex bg-black/20 rounded-lg p-1 border border-white/5">
             {protocolConfig.map(({ key, label }) => (
               <button
                 key={key}
                 className={`
                   flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-all
                   ${protocol === key
-                    ? "bg-base-100 text-base-content shadow-sm"
-                    : "text-base-content/60 hover:text-base-content"
+                    ? "bg-white/10 text-white shadow-sm ring-1 ring-white/5"
+                    : "text-white/40 hover:text-white/70 hover:bg-white/5"
                   }
                 `}
                 onClick={() => setProtocol(key)}
@@ -384,57 +384,60 @@ function ProviderEditModal({ provider, onSave, onClose }: ProviderEditModalProps
           {/* 名称 */}
           <div className="form-control">
             <label className="label py-1">
-              <span className="label-text font-medium">名称</span>
+              <span className="label-text font-medium text-white/80">Name</span>
             </label>
             <Input
-              placeholder="例如：我的 API 服务"
+              placeholder="e.g. My API Service"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+              className="bg-black/20 border-white/10 text-white placeholder:text-white/20 focus:border-primary/50"
             />
           </div>
 
           {/* API Key */}
           <div className="form-control">
             <label className="label py-1">
-              <span className="label-text font-medium">API Key</span>
+              <span className="label-text font-medium text-white/80">API Key</span>
             </label>
             <Input
               isPassword
-              placeholder="输入 API Key"
+              placeholder="Enter API Key"
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKey(e.target.value)}
+              className="bg-black/20 border-white/10 text-white placeholder:text-white/20 focus:border-primary/50"
             />
           </div>
 
           {/* Base URL */}
           <div className="form-control">
             <label className="label py-1">
-              <span className="label-text font-medium">Base URL</span>
+              <span className="label-text font-medium text-white/80">Base URL</span>
             </label>
             <Input
-              placeholder="例如：https://api.example.com"
+              placeholder="e.g. https://api.example.com"
               value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBaseUrl(e.target.value)}
+              className="bg-black/20 border-white/10 text-white placeholder:text-white/20 focus:border-primary/50"
             />
             <label className="label py-0.5">
-              <span className="label-text-alt text-base-content/50">
-                无需填写版本路径（如 /v1beta）
+              <span className="label-text-alt text-white/30 text-xs">
+                No version suffix (e.g. /v1beta) required
               </span>
             </label>
           </div>
         </div>
 
         {/* 底部 */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-base-300 bg-base-200/50">
-          <button className="btn btn-ghost btn-sm" onClick={handleClose}>
-            取消
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-white/10 bg-black/20">
+          <button className="glass-btn btn-sm" onClick={handleClose}>
+            Cancel
           </button>
           <button
             className="btn btn-primary btn-sm"
             onClick={handleSave}
             disabled={!canSave}
           >
-            {isEditing ? "保存" : "添加"}
+            {isEditing ? "Save" : "Add"}
           </button>
         </div>
       </div>
@@ -464,7 +467,7 @@ function DeleteConfirmModal({ name, onConfirm, onClose }: DeleteConfirmModalProp
       {/* 背景遮罩 */}
       <div
         className={`
-          absolute inset-0
+          absolute inset-0 bg-black/60 backdrop-blur-sm
           transition-all duration-200 ease-out
           ${backdropClasses}
         `}
@@ -473,32 +476,34 @@ function DeleteConfirmModal({ name, onConfirm, onClose }: DeleteConfirmModalProp
       {/* Modal 内容 */}
       <div
         className={`
-          relative bg-base-100 rounded-xl shadow-2xl w-full max-w-sm mx-4 p-5
+          relative glass-panel rounded-xl shadow-2xl w-full max-w-sm mx-4 p-5 border border-error/20
           transition-all duration-200 ease-out
           ${contentClasses}
         `}
       >
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-error/10 rounded-lg">
-            <AlertTriangle className="w-5 h-5 text-error" />
+          <div className="p-2 bg-error/20 rounded-lg text-error">
+            <AlertTriangle className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold">确认删除</h3>
+          <h3 className="font-semibold text-white">Delete Provider?</h3>
         </div>
-        <p className="text-sm text-base-content/70 mb-5">
-          确定要删除供应商「{name}」吗？相关节点配置也会被清除，此操作不可撤销。
+        <p className="text-sm text-white/70 mb-5 leading-relaxed">
+          Are you sure you want to delete <span className="text-white font-medium">"{name}"</span>?
+          <br />
+          This will also remove any node configurations using this provider. This cannot be undone.
         </p>
         <div className="flex gap-2 justify-end">
           <button
-            className="btn btn-ghost btn-sm"
+            className="glass-btn btn-sm"
             onClick={handleClose}
           >
-            取消
+            Cancel
           </button>
           <button
             className="btn btn-error btn-sm"
             onClick={onConfirm}
           >
-            确认删除
+            Confirm Delete
           </button>
         </div>
       </div>

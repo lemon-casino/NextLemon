@@ -91,7 +91,7 @@ export function Select({
   const dropdownContent = (
     <div
       className={`
-        py-1 bg-base-100 border border-base-300 rounded-lg shadow-xl overflow-hidden
+        py-1 glass-panel border border-white/10 rounded-lg shadow-xl overflow-hidden
         transition-all duration-150 ease-out origin-top
         ${isVisible
           ? "opacity-100 scale-100 translate-y-0"
@@ -110,7 +110,7 @@ export function Select({
         marginTop: "4px",
         zIndex: 9999,
       }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
     >
       {options.map((option) => (
         <button
@@ -120,11 +120,11 @@ export function Select({
             flex items-center justify-between w-full px-3 py-2 text-sm text-left
             transition-colors duration-150
             ${option.value === value
-              ? "bg-primary/10 text-primary"
-              : "text-base-content hover:bg-base-200"
+              ? "bg-primary/20 text-primary"
+              : "text-white/80 hover:bg-white/10 hover:text-white"
             }
           `}
-          onPointerDown={(e) => {
+          onPointerDown={(e: React.PointerEvent) => {
             e.stopPropagation();
             e.preventDefault();
             onChange(option.value);
@@ -144,8 +144,8 @@ export function Select({
     <div
       ref={containerRef}
       className={`relative ${className}`}
-      onPointerDown={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
+      onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
     >
       {/* 触发按钮 */}
       <button
@@ -153,12 +153,12 @@ export function Select({
         type="button"
         className={`
           flex items-center justify-between w-full h-8 px-3 text-sm rounded-lg
-          bg-base-200/50 border border-base-300/60
-          hover:bg-base-200 hover:border-base-300
+          bg-white/5 border border-white/10
+          hover:bg-white/10 hover:border-white/20
           transition-all duration-200
-          ${isOpen ? "ring-2 ring-primary/20 border-primary/50 bg-base-100" : ""}
+          ${isOpen ? "ring-2 ring-primary/20 border-primary/50 bg-white/10" : ""}
         `}
-        onClick={(e) => {
+        onClick={(e: React.MouseEvent) => {
           e.stopPropagation();
           if (isOpen) {
             closeDropdown();
@@ -167,13 +167,12 @@ export function Select({
           }
         }}
       >
-        <span className={selectedOption ? "text-base-content" : "text-base-content/40"}>
+        <span className={selectedOption ? "text-white/90" : "text-white/40"}>
           {selectedOption?.label || placeholder}
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-base-content/40 transition-transform duration-200 ${
-            isOpen ? "rotate-180" : ""
-          }`}
+          className={`w-4 h-4 text-white/40 transition-transform duration-200 ${isOpen ? "rotate-180" : ""
+            }`}
         />
       </button>
 

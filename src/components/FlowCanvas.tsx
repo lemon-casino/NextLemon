@@ -644,9 +644,10 @@ export function FlowCanvas() {
         />
         <Background
           variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1}
-          color="#d1d5db"
+          gap={24}
+          size={1.5}
+          color="rgba(255, 255, 255, 0.08)"
+          className="!bg-transparent"
         />
       </ReactFlow>
 

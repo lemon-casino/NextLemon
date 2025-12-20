@@ -131,35 +131,46 @@ function App() {
 
   return (
     <ReactFlowProvider>
-      <div className="flex flex-col h-screen w-screen overflow-hidden">
-        {/* 顶部工具栏 */}
-        <Toolbar onOpenHelp={() => setIsHelpOpen(true)} />
+      {/* background - 占满全屏 */}
+      <div className="absolute inset-0 z-0">
+        <FlowCanvas />
+      </div>
 
-        {/* 主体内容 */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* 左侧导航栏（包含画布列表和节点库） */}
-          <Sidebar onDragStart={onDragStart} />
+      {/* Foreground UI Layer - Pointer events allowed only on interactive elements */}
+      <div className="relative z-10 w-full h-full pointer-events-none flex flex-col justify-between p-4">
 
-          {/* 右侧画布区域 */}
-          <FlowCanvas />
+        {/* Top Bar Area */}
+        <div className="w-full flex justify-center pointer-events-auto">
+          <Toolbar onOpenHelp={() => setIsHelpOpen(true)} />
         </div>
 
-        {/* 设置面板 */}
-        <SettingsPanel />
+        {/* Main Content Area (Sidebar on left, empty right) */}
+        <div className="flex-1 flex overflow-hidden py-4">
+          {/* Left Sidebar - Floating Dock */}
+          <div className="pointer-events-auto h-full">
+            <Sidebar onDragStart={onDragStart} />
+          </div>
 
-        {/* 供应商管理面板 */}
-        <ProviderPanel />
-
-        {/* 快捷键帮助面板 */}
-        <KeyboardShortcutsPanel isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
-
-        {/* 存储管理弹窗 */}
-        <StorageManagementModal />
-
-        {/* Toast 通知容器 */}
-        <ToastContainer />
+          {/* Spacer for other floating panels if needed */}
+        </div>
       </div>
-    </ReactFlowProvider>
+
+      {/* 设置面板 */}
+      <SettingsPanel />
+
+      {/* 供应商管理面板 */}
+      <ProviderPanel />
+
+      {/* 快捷键帮助面板 */}
+      <KeyboardShortcutsPanel isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+
+      {/* 存储管理弹窗 */}
+      <StorageManagementModal />
+
+      {/* Toast 通知容器 */}
+      <ToastContainer />
+    </div>
+    </ReactFlowProvider >
   );
 }
 

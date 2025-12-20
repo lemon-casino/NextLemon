@@ -27,6 +27,7 @@ import {
 } from "@/services/updateService";
 
 // 更新按钮状态类型
+// 更新按钮状态类型
 type UpdateButtonState = "idle" | "checking" | "latest" | "hasUpdate" | "error";
 
 export function SettingsPanel() {
@@ -113,31 +114,31 @@ export function SettingsPanel() {
     switch (updateButtonState) {
       case "checking":
         return {
-          className: "btn btn-outline w-full gap-2",
+          className: "glass-btn w-full gap-2 opacity-70",
           disabled: true,
           icon: <RefreshCw className="w-4 h-4 animate-spin" />,
-          text: "正在检测...",
+          text: "Checking...",
         };
       case "latest":
         return {
-          className: "btn btn-success w-full gap-2",
+          className: "glass-btn text-success w-full gap-2",
           disabled: false,
           icon: <CheckCircle className="w-4 h-4" />,
-          text: "已是最新版本",
+          text: "Latest Version",
         };
       case "error":
         return {
-          className: "btn btn-error btn-outline w-full gap-2",
+          className: "glass-btn text-error w-full gap-2",
           disabled: false,
           icon: <AlertCircle className="w-4 h-4" />,
-          text: "检测失败",
+          text: "Check Failed",
         };
       default:
         return {
-          className: "btn btn-outline w-full gap-2",
+          className: "glass-btn w-full gap-2",
           disabled: false,
           icon: <RefreshCw className="w-4 h-4" />,
-          text: "检测更新",
+          text: "Check Update",
         };
     }
   };
@@ -149,7 +150,7 @@ export function SettingsPanel() {
       {/* 背景遮罩 */}
       <div
         className={`
-          absolute inset-0
+          absolute inset-0 bg-black/40 backdrop-blur-sm
           transition-all duration-200 ease-out
           ${backdropClasses}
         `}
@@ -158,57 +159,57 @@ export function SettingsPanel() {
       {/* Modal 内容 */}
       <div
         className={`
-          relative bg-base-100 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden max-h-[90vh] flex flex-col
-          transition-all duration-200 ease-out
+          relative glass-panel rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden max-h-[90vh] flex flex-col
+          transition-all duration-200 ease-out border border-white/10
           ${contentClasses}
         `}
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-base-300">
-          <h2 className="text-lg font-semibold">设置</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+          <h2 className="text-lg font-outfit font-semibold text-white">Settings</h2>
           <button
-            className="btn btn-ghost btn-sm btn-circle"
+            className="glass-btn btn-square btn-sm rounded-full text-white/70 hover:text-white"
             onClick={handleClose}
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* 内容 */}
-        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+        <div className="p-6 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
           {/* 供应商管理入口 */}
           <div
-            className="flex items-center justify-between p-4 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors"
+            className="flex items-center justify-between p-4 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors border border-white/5 hover:border-white/10"
             onClick={handleOpenProviders}
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                <Server className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center text-primary border border-primary/20">
+                <Server className="w-5 h-5" />
               </div>
-              <div>
-                <div className="font-medium">供应商管理</div>
-                <div className="text-sm text-base-content/50">
-                  配置 API 供应商和节点分配
+              <div className="text-left">
+                <div className="font-medium text-white">Provider Management</div>
+                <div className="text-xs text-white/50">
+                  Configure API providers & models
                 </div>
               </div>
             </div>
-            <div className="text-base-content/30">→</div>
+            <div className="text-white/30">→</div>
           </div>
 
           {/* 分隔线 */}
-          <div className="divider"></div>
+          <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
 
           {/* 主题 */}
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">主题</span>
+            <label className="label pt-0">
+              <span className="label-text font-medium text-white/80">Theme</span>
             </label>
             <Select
               value={localTheme}
               options={[
-                { value: "light", label: "浅色" },
-                { value: "dark", label: "深色" },
-                { value: "system", label: "跟随系统" },
+                { value: "light", label: "Light" },
+                { value: "dark", label: "Dark" },
+                { value: "system", label: "System" },
               ]}
               onChange={(value) =>
                 setLocalTheme(value as AppSettings["theme"])
@@ -217,53 +218,53 @@ export function SettingsPanel() {
           </div>
 
           {/* 分隔线 */}
-          <div className="divider"></div>
+          <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
 
           {/* 关于与更新 */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-base-content/70" />
-              <span className="font-medium">关于</span>
+              <Info className="w-4 h-4 text-white/50" />
+              <span className="font-medium text-white/80 text-sm">About</span>
             </div>
 
             {/* 项目信息卡片 */}
-            <div className="bg-base-200 rounded-xl p-4 space-y-3">
+            <div className="bg-gradient-to-br from-white/5 to-white/0 rounded-xl p-4 space-y-3 border border-white/5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-lg">
+                  <span className="font-semibold text-lg font-outfit text-white">
                     {PROJECT_INFO.name}
                   </span>
-                  <span className="badge badge-primary badge-sm">
+                  <span className="badge badge-primary badge-sm border-0 bg-primary/20 text-primary font-medium">
                     v{getCurrentVersion()}
                   </span>
                 </div>
               </div>
 
-              <p className="text-sm text-base-content/70">
+              <p className="text-xs text-white/60">
                 {PROJECT_INFO.description}
               </p>
 
-              <div className="flex items-center gap-4 text-xs text-base-content/50">
-                <span>作者: {PROJECT_INFO.author}</span>
-                <span>许可证: {PROJECT_INFO.license}</span>
+              <div className="flex items-center gap-4 text-[10px] text-white/40 uppercase tracking-wider">
+                <span>By {PROJECT_INFO.author}</span>
+                <span>{PROJECT_INFO.license} License</span>
               </div>
             </div>
 
             {/* GitHub 仓库链接 */}
             <div
-              className="flex items-center justify-between p-3 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors"
+              className="flex items-center justify-between p-3 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors group border border-white/5 hover:border-white/10"
               onClick={handleOpenGitHub}
             >
               <div className="flex items-center gap-3">
-                <Github className="w-5 h-5" />
-                <div>
-                  <div className="text-sm font-medium">GitHub 仓库</div>
-                  <div className="text-xs text-base-content/50">
+                <Github className="w-5 h-5 text-white/80 group-hover:text-white" />
+                <div className="text-left">
+                  <div className="text-sm font-medium text-white/80 group-hover:text-white">GitHub Repository</div>
+                  <div className="text-xs text-white/40">
                     {GITHUB_REPO.owner}/{GITHUB_REPO.repo}
                   </div>
                 </div>
               </div>
-              <ExternalLink className="w-4 h-4 text-base-content/30" />
+              <ExternalLink className="w-3.5 h-3.5 text-white/30 group-hover:text-white/50" />
             </div>
 
             {/* 检测更新按钮 */}
@@ -278,40 +279,38 @@ export function SettingsPanel() {
 
             {/* 有新版本时显示更新信息 */}
             {updateButtonState === "hasUpdate" && updateInfo && (
-              <div className="p-4 rounded-xl bg-warning/10 border border-warning/20">
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5 text-warning" />
-                    <span className="font-medium text-warning">发现新版本</span>
+                    <AlertCircle className="w-5 h-5 text-amber-500" />
+                    <span className="font-medium text-amber-500">New Version Available</span>
                   </div>
-                  <div className="text-sm space-y-1">
+                  <div className="text-xs space-y-1 text-white/70">
                     <div className="flex justify-between">
-                      <span className="text-base-content/70">当前版本:</span>
-                      <span>v{updateInfo.currentVersion}</span>
+                      <span className="text-white/40">Current:</span>
+                      <span className="font-mono">v{updateInfo.currentVersion}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-base-content/70">最新版本:</span>
-                      <span className="text-warning font-medium">
+                      <span className="text-white/40">Latest:</span>
+                      <span className="text-amber-500 font-mono font-medium">
                         v{updateInfo.latestVersion}
                       </span>
                     </div>
                     {updateInfo.publishedAt && (
                       <div className="flex justify-between">
-                        <span className="text-base-content/70">发布时间:</span>
+                        <span className="text-white/40">Released:</span>
                         <span>
-                          {new Date(updateInfo.publishedAt).toLocaleDateString(
-                            "zh-CN"
-                          )}
+                          {new Date(updateInfo.publishedAt).toLocaleDateString()}
                         </span>
                       </div>
                     )}
                   </div>
                   <button
-                    className="btn btn-warning btn-sm w-full gap-2"
+                    className="btn btn-warning btn-sm w-full gap-2 border-none bg-amber-500 text-black hover:bg-amber-400"
                     onClick={handleOpenRelease}
                   >
                     <ExternalLink className="w-4 h-4" />
-                    前往下载
+                    Download
                   </button>
                 </div>
               </div>
@@ -320,47 +319,47 @@ export function SettingsPanel() {
         </div>
 
         {/* 底部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-base-300 bg-base-200/50">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-white/10 bg-black/20">
           <button
-            className="btn btn-ghost gap-2"
+            className="text-error/70 hover:text-error text-sm flex items-center gap-2 hover:bg-error/10 px-3 py-2 rounded-lg transition-colors"
             onClick={() => setShowResetConfirm(true)}
           >
-            <RotateCcw className="w-4 h-4" />
-            重置
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset
           </button>
           <div className="flex gap-2">
-            <button className="btn btn-ghost" onClick={handleClose}>
-              取消
+            <button className="glass-btn px-4" onClick={handleClose}>
+              Cancel
             </button>
-            <button className="btn btn-primary gap-2" onClick={handleSave}>
+            <button className="btn btn-primary btn-sm gap-2" onClick={handleSave}>
               <Save className="w-4 h-4" />
-              保存
+              Save
             </button>
           </div>
         </div>
 
         {/* 重置确认对话框 */}
         {showResetConfirm && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10 rounded-2xl">
-            <div className="bg-base-100 rounded-xl p-5 mx-4 max-w-sm shadow-xl">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-10 p-6">
+            <div className="glass-panel border border-error/30 rounded-xl p-5 w-full shadow-2xl animate-in zoom-in-95 duration-200">
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-error/10 rounded-lg">
-                  <AlertTriangle className="w-5 h-5 text-error" />
+                <div className="p-2 bg-error/20 text-error rounded-lg">
+                  <AlertTriangle className="w-5 h-5" />
                 </div>
-                <h3 className="font-semibold">确认重置</h3>
+                <h3 className="font-semibold text-white">Reset Settings?</h3>
               </div>
-              <p className="text-sm text-base-content/70 mb-5">
-                确定要重置所有设置吗？这将清除所有供应商配置和节点分配，此操作不可撤销。
+              <p className="text-sm text-white/70 mb-6 leading-relaxed">
+                This will clear all provider configurations and custom settings. This action cannot be undone.
               </p>
               <div className="flex gap-2 justify-end">
                 <button
-                  className="btn btn-ghost btn-sm"
+                  className="glass-btn btn-sm"
                   onClick={() => setShowResetConfirm(false)}
                 >
-                  取消
+                  Cancel
                 </button>
                 <button className="btn btn-error btn-sm" onClick={handleReset}>
-                  确认重置
+                  Confirm Reset
                 </button>
               </div>
             </div>

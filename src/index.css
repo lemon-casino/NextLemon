@@ -1,15 +1,44 @@
 @import "tailwindcss";
 @plugin "daisyui";
 
-/* 自定义主题配置 */
+/* 引入高端字体 */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap');
+
+/* 自定义高端主题配置 */
 @theme {
-  --color-primary: oklch(65% 0.19 255);
-  --color-secondary: oklch(70% 0.15 280);
-  --color-accent: oklch(75% 0.18 150);
-  --color-neutral: oklch(30% 0.02 260);
-  --color-base-100: oklch(98% 0.01 260);
-  --color-base-200: oklch(95% 0.01 260);
-  --color-base-300: oklch(90% 0.02 260);
+  /* 
+     Premium Dark Palette 
+     Base: Deep Void/Space Blue
+     Primary: Electric Violet/Neon Purple
+     Secondary: Cyan/Turquoise
+     Accent: Hot Pink/Magenta
+  */
+  --color-primary: oklch(65% 0.22 280);      /* Electric Violet */
+  --color-primary-content: oklch(98% 0.05 280);
+  
+  --color-secondary: oklch(75% 0.18 220);    /* Electric Blue */
+  --color-secondary-content: oklch(10% 0.1 220);
+
+  --color-accent: oklch(70% 0.2 340);        /* Neon Pink */
+  --color-accent-content: oklch(98% 0.02 340);
+
+  --color-neutral: oklch(20% 0.03 260);      /* Deep Grey */
+  --color-neutral-content: oklch(90% 0.02 260);
+
+  --color-base-100: oklch(15% 0.02 260);     /* Darker Surface */
+  --color-base-200: oklch(12% 0.02 260);     /* Background */
+  --color-base-300: oklch(10% 0.02 260);     /* Deepest Background */
+  --color-base-content: oklch(90% 0.02 260); /* Text */
+
+  --color-info: oklch(70% 0.15 240);
+  --color-success: oklch(75% 0.18 150);
+  --color-warning: oklch(80% 0.15 80);
+  --color-error: oklch(65% 0.2 30);
+
+  /* Glassmorphism Variables */
+  --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(20, 20, 30, 0.6);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 }
 
 /* 基础样式 */
@@ -18,328 +47,132 @@ html, body, #root {
 }
 
 body {
-  @apply bg-base-200 text-base-content;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  /* 优化 WebView 字体渲染，防止模糊 */
+  @apply bg-base-300 text-base-content;
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* 优化 WebView 字体渲染 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(124, 58, 237, 0.08), transparent 25%), 
+    radial-gradient(circle at 85% 30%, rgba(56, 189, 248, 0.08), transparent 25%);
 }
 
-/* React Flow 自定义样式 */
-.react-flow__node {
-  /* 防止节点内容在 WebView 中模糊 */
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* Utility Classes for Glassmorphism */
+.glass-panel {
+  @apply backdrop-blur-xl bg-base-100/60 border border-white/5 shadow-xl;
 }
 
-/* 防止节点内滚动容器导致模糊 */
-.react-flow__node [class*="overflow-"] {
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
+.glass-panel-hover {
+  @apply transition-all duration-300 hover:bg-base-100/80 hover:border-white/10 hover:shadow-2xl hover:scale-[1.01];
 }
 
-.react-flow__edge-path {
-  @apply stroke-2;
+.glass-btn {
+  @apply backdrop-blur-md bg-white/5 border border-white/10 text-white transition-all duration-200 hover:bg-white/10 active:scale-95;
 }
 
-/* 邊選中時的高亮樣式，避免在渲染時逐條重建 style 對象 */
-.react-flow__edge.selected .react-flow__edge-path {
-  stroke-width: 3;
-  stroke: #3b82f6;
-}
-
-.react-flow__controls {
-  @apply bg-base-100 border border-base-300 rounded-lg shadow-md;
-}
-
-.react-flow__controls-button {
-  @apply bg-base-100 border-base-300 hover:bg-base-200;
-}
-
-.react-flow__minimap {
-  @apply bg-base-100 border border-base-300 rounded-lg shadow-md;
-}
-
-.react-flow__background {
-  @apply bg-base-200;
-}
-
-/* 滚动条样式 */
+/* Scrollbar styling */
 ::-webkit-scrollbar {
-  @apply w-2 h-2;
+  @apply w-1.5 h-1.5;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-base-200 rounded;
+  @apply bg-transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-base-300 rounded hover:bg-neutral/30;
+  @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
 }
 
-/* 节点面板拖拽样式 */
-.draggable-node {
-  @apply cursor-grab active:cursor-grabbing;
+/* React Flow Base Styles Override */
+.react-flow__background {
+  @apply bg-transparent; 
 }
 
-/* 动画：只做透明度渐显，避免额外 transform 影响 WebView 合成 */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.react-flow__node {
+  @apply shadow-lg rounded-xl border-0 !important;
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.2s ease-out;
+/* Grid Dots Customization to fit Dark Theme */
+.react-flow__background circle {
+  fill: oklch(100% 0 0 / 10%); /* Subtle white dots */
 }
 
-/* Modal 弹窗动画 - 避免 scale 导致模糊 */
-@keyframes modalBackdropIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.react-flow__edge-path {
+  @apply stroke-2 stroke-base-content/30;
 }
 
-@keyframes modalBackdropOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--color-primary);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px var(--color-primary));
 }
 
-@keyframes modalContentIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes modalContentOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
+.react-flow__controls {
+  @apply glass-panel rounded-xl overflow-hidden shadow-2xl !important;
+  button {
+     @apply bg-transparent border-b border-white/5 hover:bg-white/10 text-base-content/80 !important;
+     &:last-child {
+       @apply border-b-0;
+     }
   }
 }
 
-/* Modal 遮罩动画类 */
-.modal-backdrop-enter {
-  animation: modalBackdropIn 0.2s ease-out forwards;
+.react-flow__minimap {
+  @apply glass-panel rounded-xl overflow-hidden !important;
+  mask-image: radial-gradient(white, black);
 }
 
-.modal-backdrop-exit {
-  animation: modalBackdropOut 0.15s ease-in forwards;
+/* Modal Animations */
+@keyframes modalIn {
+  0% { opacity: 0; transform: scale(0.95) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Modal 内容动画类 */
+@keyframes overlayIn {
+  0% { opacity: 0; backdrop-filter: blur(0px); }
+  100% { opacity: 1; backdrop-filter: blur(4px); }
+}
+
 .modal-content-enter {
-  animation: modalContentIn 0.2s ease-out forwards;
+  animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.modal-content-exit {
-  animation: modalContentOut 0.15s ease-in forwards;
+.modal-backdrop-enter {
+  animation: overlayIn 0.3s ease-out forwards;
 }
 
-/* 弹出动画 - 避免 scale 导致模糊 */
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-scale-in {
-  animation: scaleIn 0.15s ease-out forwards;
-}
-
-/* 滑入动画 - 避免 transform 导致模糊 */
-@keyframes slideInUp {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
+/* Input Styles Override for Premium Look */
+.input, .select, .textarea {
+  @apply bg-base-100/50 border-white/10 text-base-content backdrop-blur-sm transition-all duration-300;
+  &:focus {
+    @apply border-primary/50 bg-base-100/80 ring-2 ring-primary/20 outline-none;
+    box-shadow: 0 0 20px -5px var(--color-primary);
   }
 }
 
-.animate-slide-in-up {
-  animation: slideInUp 0.25s ease-out forwards;
-}
-
-/* 按钮点击效果 - 避免 scale 导致模糊 */
+/* Button Refinements */
 .btn {
-  @apply relative overflow-hidden;
-  transition: opacity 0.15s ease-out, box-shadow 0.15s ease-out;
-}
-
-.btn:active:not(:disabled) {
-  opacity: 0.85;
-}
-
-/* 卡片悬停效果 - 避免 translate 导致模糊 */
-.card-hover {
-  @apply transition-all duration-200;
-}
-
-.card-hover:hover {
-  @apply shadow-lg;
-}
-
-/* 标签页内容切换动画 - 避免 transform 导致模糊 */
-@keyframes tabContentIn {
-  from {
-    opacity: 0;
+  @apply rounded-lg font-medium tracking-wide transition-all duration-300;
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px -2px rgba(0,0,0,0.2);
   }
-  to {
-    opacity: 1;
+  &:active {
+    transform: translateY(0);
   }
 }
 
-.animate-tab-content {
-  animation: tabContentIn 0.2s ease-out forwards;
-}
-
-/* 图片预览样式 */
-.image-preview {
-  @apply relative overflow-hidden rounded-lg bg-base-300;
-}
-
-.image-preview img {
-  @apply w-full h-full object-cover;
-}
-
-/* 输入框统一样式优化 */
-.input,
-.select,
-.textarea {
-  @apply bg-base-200/50 border-base-300/50 transition-all duration-200;
-}
-
-.input:focus,
-.select:focus,
-.textarea:focus {
-  @apply bg-base-100 border-primary/50 outline-none ring-2 ring-primary/20;
-}
-
-.input::placeholder {
-  @apply text-base-content/30;
-}
-
-/* 小尺寸输入框 */
-.input-sm,
-.select-sm {
-  @apply h-8 min-h-8 text-sm px-3;
-}
-
-/* 去除 bordered 的粗边框，使用更细腻的样式 */
-.input-bordered,
-.select-bordered {
-  @apply border border-base-300/60;
-}
-
-/* 暗色主题下的输入框 */
-[data-theme="dark"] .input,
-[data-theme="dark"] .select,
-[data-theme="dark"] .textarea {
-  @apply bg-base-300/30 border-base-content/10;
-}
-
-[data-theme="dark"] .input:focus,
-[data-theme="dark"] .select:focus,
-[data-theme="dark"] .textarea:focus {
-  @apply bg-base-300/50 border-primary/40;
-}
-
-/* 表单标签样式优化 */
-.label-text {
-  @apply text-sm text-base-content/70;
-}
-
-.label-text-alt {
-  @apply text-xs text-base-content/40;
-}
-
-/* 表单控件容器 */
-.form-control .label {
-  @apply pb-1;
-}
-
-/* 下拉选择框箭头优化 */
-.select {
-  @apply pr-8;
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-  background-position: right 0.5rem center;
-  background-repeat: no-repeat;
-  background-size: 1.25em 1.25em;
-}
-
-/* 下拉选项列表样式 */
-.select option {
-  @apply bg-base-100 text-base-content;
-  padding: 8px 12px;
-}
-
-.select option:hover,
-.select option:focus {
-  @apply bg-primary text-primary-content;
-}
-
-.select option:checked {
-  @apply bg-primary/20 text-primary;
-}
-
-[data-theme="dark"] .select option {
-  @apply bg-base-300 text-base-content;
-}
-
-[data-theme="dark"] .select option:checked {
-  @apply bg-primary/30 text-primary;
-}
-
-/* 加载指示器动画 - 避免使用 transform 旋转，防止字体模糊 */
-@keyframes pulse-dot {
-  0%, 100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
+.btn-primary {
+  @apply bg-primary border-primary text-white;
+  box-shadow: 0 0 20px -5px var(--color-primary);
+  &:hover {
+    box-shadow: 0 0 25px -3px var(--color-primary);
+    filter: brightness(1.1);
   }
 }
 
-@keyframes ping-slow {
-  0% {
-    transform: scale(0.8);
-    opacity: 0.8;
-  }
-  100% {
-    transform: scale(1.2);
-    opacity: 0;
-  }
-}
-
-@keyframes scale-bar {
-  0%, 100% {
-    transform: scaleY(0.5);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-}
-
-/* 省略号加载动画 - 纯文字，不触发 GPU 合成 */
-.loading-dots::after {
-  content: ".";
-  animation: dots-step 1.5s steps(1) infinite;
-}
-
-@keyframes dots-step {
-  0% { content: "."; }
-  33% { content: ".."; }
-  66% { content: "..."; }
+/* Sidebar & Node List Items */
+.dndnode {
+  @apply glass-panel p-3 rounded-xl cursor-grab active:cursor-grabbing transition-all duration-200 border-l-4 border-l-transparent hover:border-l-primary hover:bg-base-100;
 }
