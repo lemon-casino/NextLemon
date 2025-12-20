@@ -169,8 +169,7 @@ function App() {
 
       {/* Toast 通知容器 */}
       <ToastContainer />
-    </div>
-    </ReactFlowProvider >
+    </ReactFlowProvider>
   );
 }
 
