@@ -131,32 +131,29 @@ function App() {
 
   return (
     <ReactFlowProvider>
-      <div className="flex flex-col h-screen w-screen overflow-hidden">
-        {/* 顶部工具栏 */}
-        <Toolbar onOpenHelp={() => setIsHelpOpen(true)} />
-
-        {/* 主体内容 */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* 左侧导航栏（包含画布列表和节点库） */}
-          <Sidebar onDragStart={onDragStart} />
-
-          {/* 右侧画布区域 */}
-          <FlowCanvas />
+      {/* 应用主容器 - 使用 selection 颜色提升高级感 */}
+      <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-200 selection:bg-primary/20 selection:text-primary-content font-sans">
+        {/* 顶部工具栏 - 后续会做成悬浮效果 */}
+        <div className="z-50 relative">
+          <Toolbar onOpenHelp={() => setIsHelpOpen(true)} />
         </div>
 
-        {/* 设置面板 */}
+        {/* 主体内容区域 - 使用 relative 方便定位浮动面板 */}
+        <div className="flex flex-1 overflow-hidden relative">
+          {/* 左侧导航栏 - 后续可做成半透明 */}
+          <Sidebar onDragStart={onDragStart} />
+
+          {/* 右侧画布区域 - 占据剩余空间 */}
+          <div className="flex-1 relative h-full w-full">
+            <FlowCanvas />
+          </div>
+        </div>
+
+        {/* 全局面板与弹窗 - 放在最顶层 */}
         <SettingsPanel />
-
-        {/* 供应商管理面板 */}
         <ProviderPanel />
-
-        {/* 快捷键帮助面板 */}
         <KeyboardShortcutsPanel isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
-
-        {/* 存储管理弹窗 */}
         <StorageManagementModal />
-
-        {/* Toast 通知容器 */}
         <ToastContainer />
       </div>
     </ReactFlowProvider>

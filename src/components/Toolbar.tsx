@@ -173,89 +173,91 @@ export function Toolbar({ onOpenHelp }: { onOpenHelp?: () => void }) {
   const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const cmdKey = isMac ? "⌘" : "Ctrl";
 
+  // 工具按钮组件
+  const ToolButton = ({ onClick, icon: Icon, tooltip, disabled = false, danger = false }: any) => (
+    <div className="tooltip tooltip-bottom" data-tip={tooltip}>
+      <button
+        className={`
+          btn btn-ghost btn-sm btn-square rounded-lg h-9 w-9 p-0
+          transition-all duration-200
+          ${danger ? "text-error hover:bg-error/10" : "text-base-content/70 hover:text-base-content"}
+          ${disabled ? "opacity-30 cursor-not-allowed" : ""}
+        `}
+        onClick={onClick}
+        disabled={disabled}
+      >
+        <Icon className="w-4.5 h-4.5 stroke-[1.5]" />
+      </button>
+    </div>
+  );
+
   return (
-    <div className="flex items-center justify-between px-4 py-2 bg-base-100 border-b border-base-300">
-      {/* 左侧 Logo */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <img src={logoImage} alt="NextLemon" className="w-8 h-8" />
-          <span className="font-semibold text-lg">NextLemon</span>
+    <div className="px-4 py-2 pointer-events-none">
+      <div className="
+        glass-panel 
+        pointer-events-auto 
+        flex items-center justify-between 
+        px-3 py-2 
+        rounded-xl 
+        mx-auto max-w-[98%]
+        bg-base-100/90 dark:bg-base-100/70
+      ">
+        {/* 左侧 Logo */}
+        <div className="flex items-center gap-3 select-none">
+          <div className="flex items-center gap-2 group cursor-default">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/20 blur-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+              <img src={logoImage} alt="NextLemon" className="w-8 h-8 relative z-10 drop-shadow-sm" />
+            </div>
+            <span className="font-semibold text-lg tracking-tight bg-gradient-to-br from-base-content to-base-content/70 bg-clip-text text-transparent">
+              NextLemon
+            </span>
+          </div>
+          <div className="px-2 py-0.5 rounded-full bg-base-200/50 border border-base-300/50 text-xs font-mono text-base-content/50">
+            v0.2.0
+          </div>
         </div>
-        <div className="badge badge-ghost badge-sm">v0.2.0</div>
-      </div>
 
-      {/* 中间工具 */}
-      <div className="flex items-center gap-2">
-        {/* 撤销/重做 */}
-        <div className="tooltip tooltip-bottom" data-tip={`撤销 (${cmdKey}+Z)`}>
-          <button
-            className="btn btn-ghost btn-sm btn-square"
-            onClick={undo}
-            disabled={!canUndo()}
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="tooltip tooltip-bottom" data-tip={`重做 (${cmdKey}+Shift+Z)`}>
-          <button
-            className="btn btn-ghost btn-sm btn-square"
-            onClick={redo}
-            disabled={!canRedo()}
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="divider divider-horizontal mx-1" />
+        {/* 中间工具 */}
+        <div className="flex items-center gap-1.5 absolute left-1/2 -translate-x-1/2">
+          {/* 历史记录组 */}
+          <div className="flex items-center bg-base-200/50 rounded-lg p-0.5 border border-base-300/30">
+            <ToolButton icon={Undo2} onClick={undo} disabled={!canUndo()} tooltip={`撤销 (${cmdKey}+Z)`} />
+            <ToolButton icon={Redo2} onClick={redo} disabled={!canRedo()} tooltip={`重做 (${cmdKey}+Shift+Z)`} />
+          </div>
 
-        {/* 工作流控制 */}
-        <WorkflowControls />
-        <div className="divider divider-horizontal mx-1" />
+          <div className="w-px h-6 bg-base-300/50 mx-1" />
 
-        <div className="tooltip tooltip-bottom" data-tip="导入工作流">
-          <button className="btn btn-ghost btn-sm gap-2" onClick={handleImport}>
-            <Upload className="w-4 h-4" />
-            导入
-          </button>
-        </div>
-        <div className="tooltip tooltip-bottom" data-tip="导出工作流">
-          <button className="btn btn-ghost btn-sm gap-2" onClick={handleExport}>
-            <Download className="w-4 h-4" />
-            导出
-          </button>
-        </div>
-        <div className="divider divider-horizontal mx-1" />
-        <div className="tooltip tooltip-bottom" data-tip="清空画布">
-          <button
-            className="btn btn-ghost btn-sm text-error gap-2"
-            onClick={() => setShowClearConfirm(true)}
-          >
-            <Trash2 className="w-4 h-4" />
-            清空
-          </button>
-        </div>
-      </div>
+          {/* 运行控制 */}
+          <WorkflowControls />
 
-      {/* 右侧设置 */}
-      <div className="flex items-center gap-1">
-        <div className="tooltip tooltip-bottom" data-tip="存储管理">
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={openStorageModal}>
-            <HardDrive className="w-5 h-5" />
-          </button>
+          <div className="w-px h-6 bg-base-300/50 mx-1" />
+
+          {/* 文件操作组 */}
+          <div className="flex items-center bg-base-200/50 rounded-lg p-0.5 border border-base-300/30">
+            <ToolButton icon={Upload} onClick={handleImport} tooltip="导入工作流" />
+            <ToolButton icon={Download} onClick={handleExport} tooltip="导出工作流" />
+          </div>
+
+          <div className="w-px h-6 bg-base-300/50 mx-1" />
+
+          <ToolButton icon={Trash2} onClick={() => setShowClearConfirm(true)} tooltip="清空画布" danger />
         </div>
-        <div className="tooltip tooltip-bottom" data-tip="供应商管理">
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={openProviderPanel}>
-            <Server className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="tooltip tooltip-bottom" data-tip="帮助 (?)">
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={onOpenHelp}>
-            <HelpCircle className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="tooltip tooltip-bottom" data-tip="设置">
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={openSettings}>
-            <Settings className="w-5 h-5" />
-          </button>
+
+        {/* 右侧设置 */}
+        <div className="flex items-center gap-1">
+          <ToolButton icon={HardDrive} onClick={openStorageModal} tooltip="存储管理" />
+          <ToolButton icon={Server} onClick={openProviderPanel} tooltip="供应商管理" />
+          <ToolButton icon={HelpCircle} onClick={onOpenHelp} tooltip="帮助 (?)" />
+          <div className="w-px h-4 bg-base-300/50 mx-1" />
+          <div className="tooltip tooltip-bottom tooltip-left" data-tip="设置">
+            <button
+              className="btn btn-ghost btn-sm btn-circle text-base-content/70 hover:rotate-45 transition-transform duration-300"
+              onClick={openSettings}
+            >
+              <Settings className="w-5 h-5 stroke-[1.5]" />
+            </button>
+          </div>
         </div>
       </div>
 
