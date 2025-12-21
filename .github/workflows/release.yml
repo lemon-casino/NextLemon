@@ -14,12 +14,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS Apple Silicon (M1/M2/M3)
-          - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-          # macOS Intel
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
           # Windows
           - platform: 'windows-latest'
             args: ''
@@ -33,6 +27,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
+
+      - name: Sync version from tag
+        run: |
+          node ./scripts/set-version-from-tag.mjs "${{ github.ref_name }}"
+          node ./scripts/sync-version.mjs
 
       - name: Read app version
         id: app_version
@@ -64,6 +63,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          bundler: bun
           tagName: ${{ github.ref_name }}
           releaseName: 'NextLemon ${{ github.ref_name }}'
           releaseBody: |
@@ -71,8 +71,8 @@ jobs:
 
             请根据您的系统下载对应的安装包：
 
-            - **macOS (Apple Silicon M1/M2/M3)**: `NextLemon_*_aarch64.dmg`
-            - **macOS (Intel)**: `NextLemon_*_x64.dmg`
+            <!-- - **macOS (Apple Silicon M1/M2/M3)**: `NextLemon_*_aarch64.dmg` -->
+            <!-- - **macOS (Intel)**: `NextLemon_*_x64.dmg` -->
             - **Windows**: `NextLemon_*_x64-setup.exe` 或 `.msi`
           releaseDraft: false
           prerelease: false
