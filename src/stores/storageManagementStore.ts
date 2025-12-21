@@ -34,6 +34,7 @@ interface StorageManagementState {
   openModal: () => void;
   closeModal: () => void;
   refreshStats: () => Promise<void>;
+  initialize: () => Promise<void>;
 
   // 文件存储操作
   handleClearCache: () => Promise<void>;
@@ -79,6 +80,42 @@ export const useStorageManagementStore = create<StorageManagementState>(
           });
         } else {
           // 浏览器环境：显示基本信息
+          set({
+            storagePath: "浏览器 localStorage",
+            isLoading: false,
+          });
+        }
+      } catch (err) {
+        set({
+          error: err instanceof Error ? err.message : "获取存储信息失败",
+          isLoading: false,
+        });
+      }
+    },
+
+    initialize: async () => {
+      const { fileStats, isLoading } = get();
+      if (fileStats || isLoading) return; // 避免重复加载
+
+      const isTauri = isTauriEnvironment();
+      set({
+        isLoading: true,
+        error: null,
+        isTauri,
+      });
+
+      try {
+        if (isTauri) {
+          const [fileStats, storagePath] = await Promise.all([
+            getStorageStats(),
+            getStoragePath(),
+          ]);
+          set({
+            fileStats,
+            storagePath,
+            isLoading: false,
+          });
+        } else {
           set({
             storagePath: "浏览器 localStorage",
             isLoading: false,

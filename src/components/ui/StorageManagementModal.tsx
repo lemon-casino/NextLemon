@@ -32,9 +32,15 @@ export function StorageManagementContent() {
     handleDeleteImage,
     toggleFileCanvasExpanded,
     loadCanvasImages,
+    initialize,
   } = useStorageManagementStore();
 
   const { canvases } = useCanvasStore();
+
+  // 初始化加载数据
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
 
   // 删除确认状态
   const [deleteConfirm, setDeleteConfirm] = useState<{
