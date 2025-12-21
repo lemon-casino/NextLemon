@@ -34,6 +34,11 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Sync version from tag
+        run: |
+          node ./scripts/set-version-from-tag.mjs "${{ github.ref_name }}"
+          node ./scripts/sync-version.mjs
+
       - name: Read app version
         id: app_version
         run: node ./scripts/sync-version.mjs --github-output >> $GITHUB_OUTPUT
