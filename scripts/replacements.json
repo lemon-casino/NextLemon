@@ -1,0 +1,303 @@
+[
+  {
+    "StartLine": 114,
+    "EndLine": 114,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/b71755dc-ff33-4872-8161-3f5066e0ccb6\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/2000s-mirror-selfie.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 125,
+    "EndLine": 125,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G6x00O_XIAASY0r?format=jpg&name=900x900\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/professional-headshot.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 136,
+    "EndLine": 136,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/eca5066b-1bf6-4a97-8b81-63e9e7435050\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/1990s-portrait.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 149,
+    "EndLine": 149,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/963c0a46-cf86-4604-8782-524b94afc51d\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/victorias-secret.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 160,
+    "EndLine": 160,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/243d1b11-9ef0-4d4f-b308-97d67b5d3bc3\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/emotional-film.png\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 184,
+    "EndLine": 184,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7Ah9SIbIAAGlyu?format=jpg&name=900x900\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/anime-portrait-spotlight.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 199,
+    "EndLine": 199,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7QmCFcXoAAwaet?format=jpg&name=large\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/magazine-cover.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 234,
+    "EndLine": 234,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7Q6stnXIAAe7Vz?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/fisheye-movie-selfie.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 253,
+    "EndLine": 253,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7N2KUIbMAAspf6?format=jpg&name=900x900\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/museum-selfie.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 275,
+    "EndLine": 275,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7NVohbbgAcUFBe?format=jpg&name=900x900\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/compact-camera-screen.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 318,
+    "EndLine": 318,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G6qMd2abwAA-hAi?format=jpg&name=900x900\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/portrait-puppy-snow.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 392,
+    "EndLine": 392,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7PebGOW8AALh2P?format=jpg&name=large\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/bathroom-mirror-selfie.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 405,
+    "EndLine": 405,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7HwgjGaYAAgJ67?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/character-selfie.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 454,
+    "EndLine": 454,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7U1z0CbQAE9zEq?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/canon-ixus-portrait.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 505,
+    "EndLine": 505,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G6_pAefWYAAilqz?format=jpg&name=large\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/fisheye-matcha.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 525,
+    "EndLine": 525,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/f7ef5a84-e2bf-4d4e-a93e-38a23a21b9ef\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/recursive-image.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 536,
+    "EndLine": 536,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/74fced67-0715-46d3-b788-d9ed9e98873b\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/aging-through-years.png\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 549,
+    "EndLine": 549,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/439317c2-4be8-4b28-803f-36427ecca31e\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/star-wars-waldo.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 560,
+    "EndLine": 560,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/8629b88a-b872-43e2-a19e-855542702ac2\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/coordinate-visualization.png\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 587,
+    "EndLine": 587,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7LmGCQWYAAfp47?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/split-view-3d.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 598,
+    "EndLine": 598,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7LGpq0XAAAxcIP?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/usa-3d-diorama.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 609,
+    "EndLine": 609,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7I5dbiWwAAYOox?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/us-food-map.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 620,
+    "EndLine": 620,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7PmjRBXgAAVKXd?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/emoji-combination.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 666,
+    "EndLine": 666,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7OpzpjbAAArAAS?format=jpg&name=900x900\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/torn-paper-art.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 679,
+    "EndLine": 679,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7MEwTWWEAA1DkO?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/isometric-home-office.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 699,
+    "EndLine": 699,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7GOJ7WW4AAEsNE?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/city-tallest-buildings.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 710,
+    "EndLine": 710,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/b399c4d9-151b-4e15-9a40-f092f7a892b9\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/whiteboard-marker-art.png\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 740,
+    "EndLine": 740,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G65Uh3ebkAEqbv5?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/chalkboard-anime.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 778,
+    "EndLine": 778,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G64FgZKXMAAXP_g?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/cinematic-keyframe.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 789,
+    "EndLine": 789,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G70ZJFCXcAAn3F2?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/photo-book-magazine.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 800,
+    "EndLine": 800,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G75EwP0WkAEpIbm?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/floating-country-island.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 817,
+    "EndLine": 817,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7uUpDraQAAC1ty?format=jpg&name=large\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/novel-scene-poster.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 833,
+    "EndLine": 833,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7u3urdXEAA3R5K?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/miniature-swimming-pool.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 846,
+    "EndLine": 846,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7vbusrWUAA8omH?format=jpg&name=large\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/christmas-ornament-3d.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 870,
+    "EndLine": 870,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7b8YyVXQAALtxS?format=jpg&name=large\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/ironing-wrinkles.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 881,
+    "EndLine": 881,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7qgKDPX0AAEGS9?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/perfectly-isometric.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 919,
+    "EndLine": 919,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7gEwj8bIAAcFM2?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/wide-angle-phone-edit.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 949,
+    "EndLine": 949,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7drMCfXkAAN3w0?format=jpg&name=large\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/shop-window-cartoon.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 964,
+    "EndLine": 964,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7jPBxmXwAA7igN?format=jpg&name=small\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/urban-3d-led.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 1034,
+    "EndLine": 1034,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7Uz7jZXoAAGEV0?format=jpg&name=900x900\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/trans-dimensional-pour.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 1085,
+    "EndLine": 1085,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G69WHFDW4AAv0TK?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/travel-journal.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 1111,
+    "EndLine": 1111,
+    "TargetContent": "        previewImage: \"https://pbs.twimg.com/media/G7P3UgNaYAAd1HN?format=jpg&name=medium\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/financial-sankey.jpg\",",
+    "AllowMultiple": false
+  },
+  {
+    "StartLine": 1142,
+    "EndLine": 1142,
+    "TargetContent": "        previewImage: \"https://github.com/user-attachments/assets/cdfd4934-d06a-48ee-bf28-58ce16c458c1\",\r",
+    "ReplacementContent": "        previewImage: \"/prompts/product-photography.jpg\",",
+    "AllowMultiple": false
+  }
+]
