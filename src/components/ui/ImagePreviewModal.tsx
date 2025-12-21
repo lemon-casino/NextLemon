@@ -24,12 +24,12 @@ export function ImagePreviewModal({ imageData, imagePath, onClose, fileName }: I
 
   // 获取图片 URL
   const imageUrl = imagePath
-    ? (imagePath.startsWith("http://") || imagePath.startsWith("https://"))
-      ? imagePath  // 外部 URL 直接使用
-      : getImageUrl(imagePath)  // 本地路径使用 getImageUrl
+    ? (imagePath.startsWith("http://") || imagePath.startsWith("https://") || imagePath.startsWith("/"))
+      ? imagePath  // 外部 URL 或本地静态资源直接使用
+      : getImageUrl(imagePath)  // 本地文件系统路径使用 getImageUrl
     : imageData
-    ? `data:image/png;base64,${imageData}`
-    : "";
+      ? `data:image/png;base64,${imageData}`
+      : "";
 
   // 关闭时先播放退出动画
   const handleClose = useCallback(() => {
@@ -56,8 +56,24 @@ export function ImagePreviewModal({ imageData, imagePath, onClose, fileName }: I
       if (imageData) {
         base64Data = imageData;
       } else if (imagePath) {
-        // 从文件路径读取 base64 数据
-        base64Data = await readImage(imagePath);
+        if (imagePath.startsWith("/") || imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+          // 如果是 web 路径，通过 fetch 获取并转换为 base64
+          const response = await fetch(imagePath);
+          const blob = await response.blob();
+          base64Data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const params = (reader.result as string).split(',');
+              // remove header "data:image/xxx;base64,"
+              resolve(params[1]);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } else {
+          // 从文件系统路径读取 base64 数据
+          base64Data = await readImage(imagePath);
+        }
       } else {
         toast.error("没有可下载的图片数据");
         return;
