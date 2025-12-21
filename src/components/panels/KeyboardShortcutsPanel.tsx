@@ -12,18 +12,9 @@ interface KeyboardShortcutsPanelProps {
   onClose: () => void;
 }
 
-export function KeyboardShortcutsPanel({ isOpen, onClose }: KeyboardShortcutsPanelProps) {
+export function KeyboardShortcutsContent() {
   const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const cmdKey = isMac ? "⌘" : "Ctrl";
-
-  // 使用统一的 modal hook
-  const { isVisible, isClosing, handleClose, handleBackdropClick } = useModal({
-    isOpen,
-    onClose,
-  });
-
-  // 获取动画类名
-  const { backdropClasses, contentClasses } = getModalAnimationClasses(isVisible, isClosing);
 
   const shortcutGroups: ShortcutGroup[] = [
     {
@@ -68,86 +59,53 @@ export function KeyboardShortcutsPanel({ isOpen, onClose }: KeyboardShortcutsPan
     },
   ];
 
-  if (!isOpen) {
-    return null;
-  }
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex items-center px-6 py-4 border-b border-base-300 gap-2">
+        <Keyboard className="w-5 h-5 text-primary" />
+        <h2 className="text-lg font-semibold">键盘快捷键</h2>
+      </div>
+      <div className="p-6 overflow-y-auto flex-1">
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* 背景遮罩 */}
-      <div
-        className={`
-          absolute inset-0 backdrop-blur-sm
-          transition-all duration-200 ease-out
-          ${backdropClasses}
-        `}
-        onClick={handleBackdropClick}
-      />
-      {/* Modal 内容 */}
-      <div
-        className={`
-          relative bg-base-100 rounded-xl shadow-2xl w-[500px] max-h-[80vh] overflow-hidden
-          transition-all duration-200 ease-out
-          ${contentClasses}
-        `}
-      >
-        {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-base-300">
-          <div className="flex items-center gap-2">
-            <Keyboard className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold">键盘快捷键</h2>
-          </div>
-          <button
-            className="btn btn-ghost btn-sm btn-circle"
-            onClick={handleClose}
-          >
-            <X className="w-4 h-4" />
-          </button>
+        <div className="space-y-6">
+          {shortcutGroups.map((group) => (
+            <div key={group.title}>
+              <h3 className="text-sm font-medium text-base-content/60 mb-3">
+                {group.title}
+              </h3>
+              <div className="space-y-2">
+                {group.shortcuts.map((shortcut, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between py-1.5"
+                  >
+                    <span className="text-sm">{shortcut.description}</span>
+                    <div className="flex items-center gap-1">
+                      {shortcut.keys.map((key, keyIndex) => (
+                        <span key={keyIndex} className="flex items-center gap-1">
+                          <kbd className="kbd kbd-sm bg-base-200">
+                            {key}
+                          </kbd>
+                          {keyIndex < shortcut.keys.length - 1 && (
+                            <span className="text-base-content/40">+</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* 内容 */}
-        <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-          <div className="space-y-6">
-            {shortcutGroups.map((group) => (
-              <div key={group.title}>
-                <h3 className="text-sm font-medium text-base-content/60 mb-3">
-                  {group.title}
-                </h3>
-                <div className="space-y-2">
-                  {group.shortcuts.map((shortcut, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between py-1.5"
-                    >
-                      <span className="text-sm">{shortcut.description}</span>
-                      <div className="flex items-center gap-1">
-                        {shortcut.keys.map((key, keyIndex) => (
-                          <span key={keyIndex} className="flex items-center gap-1">
-                            <kbd className="kbd kbd-sm bg-base-200">
-                              {key}
-                            </kbd>
-                            {keyIndex < shortcut.keys.length - 1 && (
-                              <span className="text-base-content/40">+</span>
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* 提示 */}
-          <div className="mt-6 pt-4 border-t border-base-300">
-            <p className="text-xs text-base-content/50 text-center">
-              按 <kbd className="kbd kbd-xs">Esc</kbd> 或 <kbd className="kbd kbd-xs">?</kbd> 关闭此面板
-            </p>
-          </div>
+        {/* 提示 */}
+        <div className="mt-6 pt-4 border-t border-base-300">
+          <p className="text-xs text-base-content/50 text-center">
+            按 <kbd className="kbd kbd-xs">Esc</kbd> 或 <kbd className="kbd kbd-xs">?</kbd> 关闭此面板
+          </p>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }

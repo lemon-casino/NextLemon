@@ -1,4 +1,5 @@
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   X,
@@ -14,10 +15,10 @@ import {
   AlertCircle,
   Info,
   AlertTriangle,
+  Settings,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useStorageManagementStore } from "@/stores/storageManagementStore";
 import { Select } from "@/components/ui/Select";
 import { useModal, getModalAnimationClasses } from "@/hooks/useModal";
 import type { AppSettings } from "@/types";
@@ -28,6 +29,9 @@ import {
   PROJECT_INFO,
   type UpdateInfo,
 } from "@/services/updateService";
+import { ProviderPanelContent } from "@/components/panels/ProviderPanel";
+import { StorageManagementContent } from "@/components/ui/StorageManagementModal";
+import { KeyboardShortcutsContent } from "@/components/panels/KeyboardShortcutsPanel";
 
 // 更新按钮状态类型
 type UpdateButtonState = "idle" | "checking" | "latest" | "hasUpdate" | "error";
@@ -39,10 +43,13 @@ export function SettingsPanel() {
     closeSettings,
     updateSettings,
     resetSettings,
-    openProviderPanel,
-    openHelp,
+    settingsTab,
+    openSettings,
   } = useSettingsStore();
-  const { openModal: openStorageModal } = useStorageManagementStore();
+
+  const activeTab = settingsTab;
+  const setActiveTab = openSettings;
+
   const [localTheme, setLocalTheme] = useState<AppSettings["theme"]>(
     settings.theme
   );
@@ -61,6 +68,21 @@ export function SettingsPanel() {
   // 获取动画类名
   const { backdropClasses, contentClasses } = getModalAnimationClasses(isVisible, isClosing);
 
+  // Effect to handle opening specific tabs based on initial props or store state if complex logic existed
+  // For now simple tab state.
+
+  // If user opens "Help" from sidebar shortcut, store might call it.
+  // Actually Help functionality in store sets `isHelpOpen`.
+  // We need to sync that status? 
+  // Step 58 added `isHelpOpen` to settings store.
+  // We should listen to it or deprecate `isHelpOpen` in favor of just opening settings with tab.
+  // Let's assume for now clicking "Settings" opens general tab.
+
+  // Update local theme state when settings change
+  useEffect(() => {
+    setLocalTheme(settings.theme);
+  }, [settings.theme]);
+
   if (!isSettingsOpen) return null;
 
   const handleSave = () => {
@@ -74,21 +96,6 @@ export function SettingsPanel() {
     setShowResetConfirm(false);
   };
 
-  const handleOpenProviders = () => {
-    closeSettings();
-    openProviderPanel();
-  };
-
-  const handleOpenStorage = () => {
-    closeSettings();
-    openStorageModal();
-  };
-
-  const handleOpenHelp = () => {
-    closeSettings();
-    openHelp();
-  };
-
   const handleCheckUpdate = async () => {
     setUpdateButtonState("checking");
     setUpdateInfo(null);
@@ -98,7 +105,6 @@ export function SettingsPanel() {
       setUpdateInfo(info);
       setUpdateButtonState(info.hasUpdate ? "hasUpdate" : "latest");
 
-      // 如果已是最新版本，3秒后恢复按钮状态
       if (!info.hasUpdate) {
         setTimeout(() => {
           setUpdateButtonState("idle");
@@ -106,7 +112,6 @@ export function SettingsPanel() {
       }
     } catch {
       setUpdateButtonState("error");
-      // 错误状态 3 秒后恢复
       setTimeout(() => {
         setUpdateButtonState("idle");
       }, 3000);
@@ -123,7 +128,22 @@ export function SettingsPanel() {
     }
   };
 
-  // 获取更新按钮的样式和内容
+  // Nav Item helper
+  const NavItem = ({ id, icon: Icon, label }: { id: SettingsTab; icon: React.ElementType; label: string }) => (
+    <button
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium
+        ${activeTab === id
+          ? "bg-primary text-primary-content shadow-sm"
+          : "hover:bg-base-200 text-base-content/70 hover:text-base-content"
+        }
+      `}
+      onClick={() => setActiveTab(id)}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+    </button>
+  );
+
   const getUpdateButtonProps = () => {
     switch (updateButtonState) {
       case "checking":
@@ -170,231 +190,209 @@ export function SettingsPanel() {
         `}
         onClick={handleBackdropClick}
       />
-      {/* Modal 内容 */}
+      {/* Modal 内容 - Max size increased for 2-column layout */}
       <div
         className={`
-          relative bg-base-100 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden max-h-[90vh] flex flex-col
+          relative bg-base-100 rounded-2xl shadow-2xl w-[900px] h-[600px] overflow-hidden flex
           transition-all duration-200 ease-out
           ${contentClasses}
         `}
       >
-        {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-base-300">
-          <h2 className="text-lg font-semibold">设置</h2>
+        {/* Left Sidebar Navigation */}
+        <div className="w-64 bg-base-200/50 border-r border-base-300 flex flex-col p-4">
+          <h2 className="text-lg font-bold px-2 mb-6 flex items-center gap-2">
+            <Settings className="w-5 h-5" />
+            设置
+          </h2>
+
+          <div className="space-y-1">
+            <NavItem id="general" icon={Settings} label="通用设置" />
+            <NavItem id="providers" icon={Server} label="供应商管理" />
+            <NavItem id="storage" icon={HardDrive} label="存储管理" />
+            <NavItem id="shortcuts" icon={Keyboard} label="快捷键" />
+            <NavItem id="about" icon={Info} label="关于" />
+          </div>
+
+          <div className="mt-auto pt-4 border-t border-base-300">
+            <div className="flex items-center gap-2 px-2 text-xs text-base-content/50">
+              <span>版本 v{getCurrentVersion()}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 bg-base-100 relative">
           <button
-            className="btn btn-ghost btn-sm btn-circle"
+            className="absolute top-4 right-4 btn btn-ghost btn-sm btn-circle z-10"
             onClick={handleClose}
           >
             <X className="w-5 h-5" />
           </button>
-        </div>
 
-        {/* 内容 */}
-        <div className="p-6 space-y-6 overflow-y-auto flex-1">
-          {/* 供应商管理入口 */}
-          <div
-            className="flex items-center justify-between p-4 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors"
-            onClick={handleOpenProviders}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                <Server className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <div className="font-medium">供应商管理</div>
-                <div className="text-sm text-base-content/50">
-                  配置 API 供应商和节点分配
-                </div>
-              </div>
-            </div>
-            <div className="text-base-content/30">→</div>
-          </div>
+          {/* Content Switcher */}
+          <div className="flex-1 overflow-hidden relative">
 
-          {/* 存储管理入口 */}
-          <div
-            className="flex items-center justify-between p-4 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors"
-            onClick={handleOpenStorage}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-secondary/10 rounded-lg flex items-center justify-center">
-                <HardDrive className="w-5 h-5 text-secondary" />
-              </div>
-              <div>
-                <div className="font-medium">存储管理</div>
-                <div className="text-sm text-base-content/50">
-                  管理本地存储和空间占用
-                </div>
-              </div>
-            </div>
-            <div className="text-base-content/30">→</div>
-          </div>
+            {/* General Settings */}
+            {activeTab === "general" && (
+              <div className="h-full overflow-y-auto p-8">
+                <h3 className="text-xl font-bold mb-6">通用设置</h3>
 
-          {/* 帮助入口 */}
-          <div
-            className="flex items-center justify-between p-4 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors"
-            onClick={handleOpenHelp}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
-                <Keyboard className="w-5 h-5 text-accent" />
-              </div>
-              <div>
-                <div className="font-medium">帮助与快捷键</div>
-                <div className="text-sm text-base-content/50">
-                  查看常用快捷键和使用指南
-                </div>
-              </div>
-            </div>
-            <div className="text-base-content/30">→</div>
-          </div>
-
-          {/* 分隔线 */}
-          <div className="divider"></div>
-
-          {/* 主题 */}
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">主题</span>
-            </label>
-            <Select
-              value={localTheme}
-              options={[
-                { value: "light", label: "浅色" },
-                { value: "dark", label: "深色" },
-                { value: "system", label: "跟随系统" },
-              ]}
-              onChange={(value) =>
-                setLocalTheme(value as AppSettings["theme"])
-              }
-            />
-          </div>
-
-          {/* 分隔线 */}
-          <div className="divider"></div>
-
-          {/* 关于与更新 */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-base-content/70" />
-              <span className="font-medium">关于</span>
-            </div>
-
-            {/* 项目信息卡片 */}
-            <div className="bg-base-200 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-lg">
-                    {PROJECT_INFO.name}
-                  </span>
-                  <span className="badge badge-primary badge-sm">
-                    v{getCurrentVersion()}
-                  </span>
-                </div>
-              </div>
-
-              <p className="text-sm text-base-content/70">
-                {PROJECT_INFO.description}
-              </p>
-
-              <div className="flex items-center gap-4 text-xs text-base-content/50">
-                <span>作者: {PROJECT_INFO.author}</span>
-                <span>许可证: {PROJECT_INFO.license}</span>
-              </div>
-            </div>
-
-            {/* GitHub 仓库链接 */}
-            <div
-              className="flex items-center justify-between p-3 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors"
-              onClick={handleOpenGitHub}
-            >
-              <div className="flex items-center gap-3">
-                <Github className="w-5 h-5" />
-                <div>
-                  <div className="text-sm font-medium">GitHub 仓库</div>
-                  <div className="text-xs text-base-content/50">
-                    {GITHUB_REPO.owner}/{GITHUB_REPO.repo}
-                  </div>
-                </div>
-              </div>
-              <ExternalLink className="w-4 h-4 text-base-content/30" />
-            </div>
-
-            {/* 检测更新按钮 */}
-            <button
-              className={updateButtonProps.className}
-              onClick={handleCheckUpdate}
-              disabled={updateButtonProps.disabled}
-            >
-              {updateButtonProps.icon}
-              {updateButtonProps.text}
-            </button>
-
-            {/* 有新版本时显示更新信息 */}
-            {updateButtonState === "hasUpdate" && updateInfo && (
-              <div className="p-4 rounded-xl bg-warning/10 border border-warning/20">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5 text-warning" />
-                    <span className="font-medium text-warning">发现新版本</span>
-                  </div>
-                  <div className="text-sm space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-base-content/70">当前版本:</span>
-                      <span>v{updateInfo.currentVersion}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-base-content/70">最新版本:</span>
-                      <span className="text-warning font-medium">
-                        v{updateInfo.latestVersion}
+                <div className="space-y-6 max-w-lg">
+                  <div className="form-control">
+                    <label className="label">
+                      <span className="label-text font-medium">界面主题</span>
+                    </label>
+                    <Select
+                      value={localTheme}
+                      options={[
+                        { value: "light", label: "浅色模式" },
+                        { value: "dark", label: "深色模式" },
+                        { value: "system", label: "跟随系统" },
+                      ]}
+                      onChange={(value) =>
+                        setLocalTheme(value as AppSettings["theme"])
+                      }
+                    />
+                    <label className="label">
+                      <span className="label-text-alt text-base-content/50">
+                        选择您喜欢的界面外观风格
                       </span>
-                    </div>
-                    {updateInfo.publishedAt && (
-                      <div className="flex justify-between">
-                        <span className="text-base-content/70">发布时间:</span>
-                        <span>
-                          {new Date(updateInfo.publishedAt).toLocaleDateString(
-                            "zh-CN"
-                          )}
+                    </label>
+                  </div>
+
+                  <div className="divider"></div>
+
+                  <div className="flex justify-start gap-3">
+                    <button className="btn btn-primary" onClick={handleSave}>
+                      <Save className="w-4 h-4" />
+                      保存设置
+                    </button>
+                    <button
+                      className="btn btn-ghost text-error"
+                      onClick={() => setShowResetConfirm(true)}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      重置所有设置
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Providers */}
+            {activeTab === "providers" && <ProviderPanelContent />}
+
+            {/* Storage */}
+            {activeTab === "storage" && <StorageManagementContent />}
+
+            {/* Shortcuts */}
+            {activeTab === "shortcuts" && <KeyboardShortcutsContent />}
+
+            {/* About */}
+            {activeTab === "about" && (
+              <div className="h-full overflow-y-auto p-8">
+                <h3 className="text-xl font-bold mb-6">关于 NextLemon</h3>
+
+                <div className="space-y-6 max-w-lg">
+                  {/* 项目信息卡片 */}
+                  <div className="bg-base-200 rounded-xl p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-2xl">
+                          {PROJECT_INFO.name}
+                        </span>
+                        <span className="badge badge-primary badge-lg">
+                          v{getCurrentVersion()}
                         </span>
                       </div>
-                    )}
+                    </div>
+
+                    <p className="text-base text-base-content/70 leading-relaxed">
+                      {PROJECT_INFO.description}
+                    </p>
+
+                    <div className="flex items-center gap-6 text-sm text-base-content/50 pt-2 border-t border-base-content/10">
+                      <span>作者: {PROJECT_INFO.author}</span>
+                      <span>许可证: {PROJECT_INFO.license}</span>
+                    </div>
                   </div>
-                  <button
-                    className="btn btn-warning btn-sm w-full gap-2"
-                    onClick={handleOpenRelease}
+
+                  {/* GitHub 仓库链接 */}
+                  <div
+                    className="flex items-center justify-between p-4 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors border border-transparent hover:border-base-content/10"
+                    onClick={handleOpenGitHub}
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    前往下载
+                    <div className="flex items-center gap-4">
+                      <Github className="w-6 h-6" />
+                      <div>
+                        <div className="font-bold">GitHub 仓库</div>
+                        <div className="text-sm text-base-content/50">
+                          {GITHUB_REPO.owner}/{GITHUB_REPO.repo}
+                        </div>
+                      </div>
+                    </div>
+                    <ExternalLink className="w-4 h-4 text-base-content/30" />
+                  </div>
+
+                  {/* 检测更新按钮 */}
+                  <button
+                    className={updateButtonProps.className}
+                    onClick={handleCheckUpdate}
+                    disabled={updateButtonProps.disabled}
+                  >
+                    {updateButtonProps.icon}
+                    {updateButtonProps.text}
                   </button>
+
+                  {/* 有新版本时显示更新信息 */}
+                  {updateButtonState === "hasUpdate" && updateInfo && (
+                    <div className="p-4 rounded-xl bg-warning/10 border border-warning/20">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-5 h-5 text-warning" />
+                          <span className="font-medium text-warning">发现新版本</span>
+                        </div>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-base-content/70">当前版本:</span>
+                            <span>v{updateInfo.currentVersion}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-base-content/70">最新版本:</span>
+                            <span className="text-warning font-medium">
+                              v{updateInfo.latestVersion}
+                            </span>
+                          </div>
+                          {updateInfo.publishedAt && (
+                            <div className="flex justify-between">
+                              <span className="text-base-content/70">发布时间:</span>
+                              <span>
+                                {new Date(updateInfo.publishedAt).toLocaleDateString(
+                                  "zh-CN"
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          className="btn btn-warning btn-sm w-full gap-2"
+                          onClick={handleOpenRelease}
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          前往下载
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* 底部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-base-300 bg-base-200/50">
-          <button
-            className="btn btn-ghost gap-2"
-            onClick={() => setShowResetConfirm(true)}
-          >
-            <RotateCcw className="w-4 h-4" />
-            重置
-          </button>
-          <div className="flex gap-2">
-            <button className="btn btn-ghost" onClick={handleClose}>
-              取消
-            </button>
-            <button className="btn btn-primary gap-2" onClick={handleSave}>
-              <Save className="w-4 h-4" />
-              保存
-            </button>
-          </div>
-        </div>
-
         {/* 重置确认对话框 */}
         {showResetConfirm && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10 rounded-2xl">
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
             <div className="bg-base-100 rounded-xl p-5 mx-4 max-w-sm shadow-xl">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 bg-error/10 rounded-lg">

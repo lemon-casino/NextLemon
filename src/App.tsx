@@ -4,9 +4,9 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { Toolbar } from "@/components/Toolbar";
 import { FlowCanvas } from "@/components/FlowCanvas";
 import { Sidebar } from "@/components/Sidebar";
-import { SettingsPanel, KeyboardShortcutsPanel } from "@/components/panels";
-import { ProviderPanel } from "@/components/panels/ProviderPanel";
-import { StorageManagementModal } from "@/components/ui/StorageManagementModal";
+import { SettingsPanel } from "@/components/panels";
+// import { ProviderPanel } from "@/components/panels/ProviderPanel"; // Removed
+// import { StorageManagementModal } from "@/components/ui/StorageManagementModal"; // Removed
 import { ToastContainer } from "@/components/ui/Toast";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useFlowStore } from "@/stores/flowStore";
@@ -18,7 +18,8 @@ function App() {
   const { activeCanvasId, getActiveCanvas, createCanvas, updateCanvasData, canvases, _hasHydrated } = useCanvasStore();
   const { nodes, edges, setNodes, setEdges } = useFlowStore();
   const theme = useSettingsStore((state) => state.settings.theme);
-  const { isHelpOpen, openHelp, closeHelp } = useSettingsStore();
+  const { isSettingsOpen, settingsTab, openHelp, closeHelp } = useSettingsStore();
+  const isHelpOpen = isSettingsOpen && settingsTab === "shortcuts";
 
   // 用于追踪是否正在切换画布，避免循环更新
   const isLoadingCanvasRef = useRef(false);
@@ -148,15 +149,6 @@ function App() {
 
         {/* 设置面板 */}
         <SettingsPanel />
-
-        {/* 供应商管理面板 */}
-        <ProviderPanel />
-
-        {/* 快捷键帮助面板 */}
-        <KeyboardShortcutsPanel isOpen={isHelpOpen} onClose={closeHelp} />
-
-        {/* 存储管理弹窗 */}
-        <StorageManagementModal />
 
         {/* Toast 通知容器 */}
         <ToastContainer />

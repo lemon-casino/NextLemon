@@ -260,7 +260,7 @@ export function Sidebar({ onDragStart }: SidebarProps) {
             <button
               className="w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 cursor-pointer hover:bg-base-100/80 text-base-content/60 hover:text-base-content hover:shadow-md hover:scale-105"
               data-tip="设置"
-              onClick={openSettings}
+              onClick={() => openSettings()}
             >
               <Settings className="w-5 h-5 transition-transform duration-500 group-hover:rotate-90" />
             </button>

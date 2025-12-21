@@ -38,11 +38,17 @@ function migrateProviders(providers: Provider[]): Provider[] {
   });
 }
 
+export type SettingsTab = "general" | "providers" | "storage" | "shortcuts" | "about";
+
 interface SettingsStore extends SettingsState {
   // 基础设置
   updateSettings: (settings: Partial<AppSettings>) => void;
   resetSettings: () => void;
-  openSettings: () => void;
+
+  // Settings Window
+  isSettingsOpen: boolean;
+  settingsTab: SettingsTab;
+  openSettings: (tab?: SettingsTab) => void;
   closeSettings: () => void;
 
   // 供应商 CRUD
@@ -55,15 +61,10 @@ interface SettingsStore extends SettingsState {
   setNodeProvider: (nodeType: keyof NodeProviderMapping, providerId: string | undefined) => void;
   getNodeProvider: (nodeType: keyof NodeProviderMapping) => Provider | undefined;
 
-  // 供应商面板状态
-  isProviderPanelOpen: boolean;
+  // Backwards compatibility actions (redirect to Settings)
   openProviderPanel: () => void;
-  closeProviderPanel: () => void;
-
-  // 帮助面板状态
-  isHelpOpen: boolean;
   openHelp: () => void;
-  closeHelp: () => void;
+  closeHelp: () => void; // Alias for closeSettings if we want consistent behavior for 'Esc' on help
 }
 
 // 生成唯一 ID
@@ -75,8 +76,10 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
       settings: defaultSettings,
+
+      // Settings State
       isSettingsOpen: false,
-      isProviderPanelOpen: false,
+      settingsTab: "general",
 
       updateSettings: (newSettings) =>
         set((state) => ({
@@ -86,8 +89,8 @@ export const useSettingsStore = create<SettingsStore>()(
       resetSettings: () =>
         set({ settings: defaultSettings }),
 
-      openSettings: () =>
-        set({ isSettingsOpen: true }),
+      openSettings: (tab = "general") =>
+        set({ isSettingsOpen: true, settingsTab: tab }),
 
       closeSettings: () =>
         set({ isSettingsOpen: false }),
@@ -156,17 +159,10 @@ export const useSettingsStore = create<SettingsStore>()(
         return state.settings.providers.find((p) => p.id === providerId);
       },
 
-      // 供应商面板状态
-      openProviderPanel: () =>
-        set({ isProviderPanelOpen: true }),
-
-      closeProviderPanel: () =>
-        set({ isProviderPanelOpen: false }),
-
-      // 帮助面板状态
-      isHelpOpen: false,
-      openHelp: () => set({ isHelpOpen: true }),
-      closeHelp: () => set({ isHelpOpen: false }),
+      // Redirect actions
+      openProviderPanel: () => set({ isSettingsOpen: true, settingsTab: "providers" }),
+      openHelp: () => set({ isSettingsOpen: true, settingsTab: "shortcuts" }),
+      closeHelp: () => set({ isSettingsOpen: false }),
     }),
     {
       name: "next-creator-settings",

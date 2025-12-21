@@ -30,11 +30,9 @@ const nodeTypeConfig: { key: keyof NodeProviderMapping; label: string; descripti
   { key: "llm", label: "PPT 大纲生成", description: "PPT 内容节点的大纲生成部分" },
 ];
 
-export function ProviderPanel() {
+export function ProviderPanelContent() {
   const {
     settings,
-    isProviderPanelOpen,
-    closeProviderPanel,
     addProvider,
     updateProvider,
     removeProvider,
@@ -50,34 +48,26 @@ export function ProviderPanel() {
   // 删除确认状态
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
 
-  // 使用统一的 modal hook
-  const { isVisible, isClosing, handleClose, handleBackdropClick } = useModal({
-    isOpen: isProviderPanelOpen,
-    onClose: closeProviderPanel,
-  });
-
-  // 获取动画类名
-  const { backdropClasses, contentClasses } = getModalAnimationClasses(isVisible, isClosing);
-
   // 同步初始值
   useEffect(() => {
-    if (isProviderPanelOpen) {
-      setLocalNodeProviders(settings.nodeProviders || {});
-    }
-  }, [isProviderPanelOpen, settings.nodeProviders]);
-
-  if (!isProviderPanelOpen) return null;
+    setLocalNodeProviders(settings.nodeProviders || {});
+  }, [settings.nodeProviders]);
 
   // 确保 providers 数组存在
   const providers = settings.providers || [];
 
-  // 保存节点配置
-  const handleSave = () => {
+  // 保存节点配置 (自动保存? 或者提供手动保存按钮? )
+  // User request: "Click each option on right appears content".
+  // The original ProviderPanel had a "Save" button which closed the panel.
+  // Now it's inside Settings. We might want a "Save Node Config" button or auto-save.
+  // Original `handleSave` updated the store and closed panel.
+
+  const handleSaveNodeConfig = () => {
     // 更新节点供应商映射
     for (const { key } of nodeTypeConfig) {
       setNodeProvider(key, localNodeProviders[key]);
     }
-    closeProviderPanel();
+    // toast.success("节点配置已保存"); // Maybe add toast?
   };
 
   // 删除供应商 - 显示确认弹窗
@@ -102,162 +92,138 @@ export function ProviderPanel() {
     setLocalNodeProviders(newLocalNodeProviders);
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* 背景遮罩 */}
-      <div
-        className={`
-          absolute inset-0
-          transition-all duration-200 ease-out
-          ${backdropClasses}
-        `}
-        onClick={handleBackdropClick}
-      />
-      {/* Modal 内容 */}
-      <div
-        className={`
-          relative bg-base-100 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] flex flex-col
-          transition-all duration-200 ease-out
-          ${contentClasses}
-        `}
-      >
-        {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-base-300">
-          <div className="flex items-center gap-2">
-            <Server className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold">供应商管理</h2>
-          </div>
-          <button
-            className="btn btn-ghost btn-sm btn-circle"
-            onClick={handleClose}
-          >
-            <X className="w-5 h-5" />
-          </button>
+  return (
+    <div className="h-full flex flex-col">
+      {/* 头部 - 在 unified settings 中可能不需要这个头部，或者保留作为标题 */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-base-300">
+        <div className="flex items-center gap-2">
+          <Server className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-semibold">供应商管理</h2>
         </div>
+        {/* Save button for Node Config moved here or kept at bottom? */}
+      </div>
 
-        {/* 内容 - 可滚动 */}
-        <div className="p-6 space-y-6 overflow-y-auto flex-1">
-          {/* 供应商列表区域 */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-base-content/70 uppercase tracking-wider">
-              供应商列表
-            </h3>
+      {/* 内容 - 可滚动 */}
+      <div className="p-6 space-y-6 overflow-y-auto flex-1">
 
-            {/* 供应商卡片列表 */}
-            {providers.length === 0 ? (
-              <div className="text-center py-8 text-base-content/50">
-                <Server className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p>暂无供应商</p>
-                <p className="text-sm">点击下方按钮添加</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {providers.map((provider) => (
-                  <div
-                    key={provider.id}
-                    className="flex items-center justify-between p-3 bg-base-200 rounded-lg"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">{provider.name}</span>
-                        <span className="px-1.5 py-0.5 text-xs rounded bg-base-300 text-base-content/70 shrink-0">
-                          {protocolLabels[provider.protocol] || "Google"}
-                        </span>
-                      </div>
-                      <div className="text-sm text-base-content/50 truncate">
-                        {provider.baseUrl}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 ml-2">
-                      <button
-                        className="btn btn-ghost btn-xs btn-square"
-                        onClick={() => setEditingProvider(provider)}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-xs btn-square text-error"
-                        onClick={() => handleDeleteProvider(provider)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+        {/* 供应商列表区域 */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-base-content/70 uppercase tracking-wider">
+            供应商列表
+          </h3>
 
-            {/* 添加供应商按钮 */}
-            <button
-              className="btn btn-outline btn-sm w-full gap-2"
-              onClick={() => setIsAddingProvider(true)}
-            >
-              <Plus className="w-4 h-4" />
-              添加供应商
-            </button>
-          </div>
-
-          {/* 分隔线 */}
-          <div className="divider"></div>
-
-          {/* 节点配置区域 */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-base-content/70 uppercase tracking-wider">
-              节点配置
-            </h3>
-
-            {providers.length === 0 ? (
-              <div className="text-center py-4 text-base-content/50 text-sm">
-                请先添加供应商
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {nodeTypeConfig.map(({ key, label, description }) => (
-                  <div key={key} className="form-control">
-                    <label className="label py-1">
-                      <span className="label-text font-medium">{label}</span>
-                    </label>
-                    <Select
-                      value={localNodeProviders[key] || ""}
-                      placeholder="未配置"
-                      options={[
-                        { value: "", label: "未配置" },
-                        ...providers.map((provider) => ({
-                          value: provider.id,
-                          label: `${provider.name} (${protocolLabels[provider.protocol] || "Google"})`,
-                        })),
-                      ]}
-                      onChange={(value) =>
-                        setLocalNodeProviders({
-                          ...localNodeProviders,
-                          [key]: value || undefined,
-                        })
-                      }
-                    />
-                    <label className="label py-0.5">
-                      <span className="label-text-alt text-base-content/50">
-                        {description}
+          {/* 供应商卡片列表 */}
+          {providers.length === 0 ? (
+            <div className="text-center py-8 text-base-content/50">
+              <Server className="w-12 h-12 mx-auto mb-2 opacity-30" />
+              <p>暂无供应商</p>
+              <p className="text-sm">点击下方按钮添加</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {providers.map((provider) => (
+                <div
+                  key={provider.id}
+                  className="flex items-center justify-between p-3 bg-base-200 rounded-lg"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{provider.name}</span>
+                      <span className="px-1.5 py-0.5 text-xs rounded bg-base-300 text-base-content/70 shrink-0">
+                        {protocolLabels[provider.protocol] || "Google"}
                       </span>
-                    </label>
+                    </div>
+                    <div className="text-sm text-base-content/50 truncate">
+                      {provider.baseUrl}
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    <button
+                      className="btn btn-ghost btn-xs btn-square"
+                      onClick={() => setEditingProvider(provider)}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-xs btn-square text-error"
+                      onClick={() => handleDeleteProvider(provider)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 添加供应商按钮 */}
+          <button
+            className="btn btn-outline btn-sm w-full gap-2"
+            onClick={() => setIsAddingProvider(true)}
+          >
+            <Plus className="w-4 h-4" />
+            添加供应商
+          </button>
         </div>
 
-        {/* 底部 */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-base-300 bg-base-200/50">
-          <button className="btn btn-ghost" onClick={handleClose}>
-            取消
-          </button>
-          <button className="btn btn-primary gap-2" onClick={handleSave}>
-            <Save className="w-4 h-4" />
-            保存
-          </button>
+        {/* 分隔线 */}
+        <div className="divider"></div>
+
+        {/* 节点配置区域 */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-base-content/70 uppercase tracking-wider">
+            节点配置
+          </h3>
+
+          {providers.length === 0 ? (
+            <div className="text-center py-4 text-base-content/50 text-sm">
+              请先添加供应商
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {nodeTypeConfig.map(({ key, label, description }) => (
+                <div key={key} className="form-control">
+                  <label className="label py-1">
+                    <span className="label-text font-medium">{label}</span>
+                  </label>
+                  <Select
+                    value={localNodeProviders[key] || ""}
+                    placeholder="未配置"
+                    options={[
+                      { value: "", label: "未配置" },
+                      ...providers.map((provider) => ({
+                        value: provider.id,
+                        label: `${provider.name} (${protocolLabels[provider.protocol] || "Google"})`,
+                      })),
+                    ]}
+                    onChange={(value) =>
+                      setLocalNodeProviders({
+                        ...localNodeProviders,
+                        [key]: value || undefined,
+                      })
+                    }
+                  />
+                  <label className="label py-0.5">
+                    <span className="label-text-alt text-base-content/50">
+                      {description}
+                    </span>
+                  </label>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
+      {/* 底部 - 仅保存节点配置 */}
+      <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-base-300 bg-base-200/50">
+        <button className="btn btn-primary gap-2" onClick={handleSaveNodeConfig}>
+          <Save className="w-4 h-4" />
+          保存节点配置
+        </button>
+      </div>
+
+      {/* 嵌套的弹窗需要使用 Portal 或者放在外层。由于 SettingsPanel 已经是 Modal，嵌套 Modal (Portal) 是可以的。 */}
       {/* 添加/编辑供应商弹窗 */}
       {(isAddingProvider || editingProvider) && (
         <ProviderEditModal
@@ -286,8 +252,7 @@ export function ProviderPanel() {
           onClose={() => setDeleteConfirm(null)}
         />
       )}
-    </div>,
-    document.body
+    </div>
   );
 }
 

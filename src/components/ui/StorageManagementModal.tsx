@@ -17,9 +17,8 @@ import { formatFileSize, getImageUrl, type ImageInfoWithMetadata } from "@/servi
 import { LoadingIndicator } from "@/components/ui/LoadingIndicator";
 import { ImageDetailModal } from "@/components/ui/ImageDetailModal";
 
-export function StorageManagementModal() {
+export function StorageManagementContent() {
   const {
-    isOpen,
     isLoading,
     isTauri,
     fileStats,
@@ -27,7 +26,6 @@ export function StorageManagementModal() {
     expandedFileCanvases,
     canvasImages,
     error,
-    closeModal,
     refreshStats,
     handleClearCache,
     handleClearAllImages,
@@ -38,10 +36,6 @@ export function StorageManagementModal() {
   } = useStorageManagementStore();
 
   const { canvases } = useCanvasStore();
-
-  // 动画状态
-  const [isVisible, setIsVisible] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
 
   // 删除确认状态
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -57,35 +51,6 @@ export function StorageManagementModal() {
 
   // 搜索状态
   const [searchQuery, setSearchQuery] = useState("");
-
-  // 进入动画
-  useEffect(() => {
-    if (isOpen) {
-      setIsClosing(false);
-      requestAnimationFrame(() => setIsVisible(true));
-    }
-  }, [isOpen]);
-
-  // 关闭时先播放退出动画
-  const handleClose = useCallback(() => {
-    setIsClosing(true);
-    setIsVisible(false);
-    setTimeout(() => {
-      closeModal();
-      setIsClosing(false);
-    }, 200);
-  }, [closeModal]);
-
-  // ESC 键关闭
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        handleClose();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, handleClose]);
 
   // 当用户输入搜索关键词时，自动加载所有画布的图片数据
   useEffect(() => {
@@ -104,8 +69,6 @@ export function StorageManagementModal() {
 
     loadAllCanvasImages();
   }, [searchQuery, fileStats, isTauri, canvasImages, loadCanvasImages]);
-
-  if (!isOpen) return null;
 
   // 获取画布名称
   const getCanvasName = (canvasId: string): string => {
@@ -240,13 +203,13 @@ export function StorageManagementModal() {
                 const filteredImages = !searchQuery.trim()
                   ? allImages
                   : allImages.filter((image) => {
-                      const query = searchQuery.toLowerCase();
-                      // 搜索提示词
-                      const promptMatch = image.metadata?.prompt?.toLowerCase().includes(query);
-                      // 搜索文件名
-                      const filenameMatch = image.filename.toLowerCase().includes(query);
-                      return promptMatch || filenameMatch;
-                    });
+                    const query = searchQuery.toLowerCase();
+                    // 搜索提示词
+                    const promptMatch = image.metadata?.prompt?.toLowerCase().includes(query);
+                    // 搜索文件名
+                    const filenameMatch = image.filename.toLowerCase().includes(query);
+                    return promptMatch || filenameMatch;
+                  });
 
                 // 如果有搜索关键词且没有匹配结果，不显示这个画布分组
                 if (searchQuery.trim() && filteredImages.length === 0) {
@@ -321,11 +284,10 @@ export function StorageManagementModal() {
                                 {/* 类型标签 */}
                                 {image.image_type && (
                                   <div
-                                    className={`absolute bottom-0 right-0 px-1 text-[9px] leading-tight text-white ${
-                                      image.image_type === "input"
-                                        ? "bg-green-500"
-                                        : "bg-purple-500"
-                                    }`}
+                                    className={`absolute bottom-0 right-0 px-1 text-[9px] leading-tight text-white ${image.image_type === "input"
+                                      ? "bg-green-500"
+                                      : "bg-purple-500"
+                                      }`}
                                     title={image.image_type === "input" ? "上传的图片" : "生成的图片"}
                                   >
                                     {image.image_type === "input" ? "输入" : "生成"}
@@ -441,107 +403,76 @@ export function StorageManagementModal() {
     );
   };
 
-  const modalContent = createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-      {/* 背景遮罩 */}
-      <div
-        className={`
-          absolute inset-0
-          transition-all duration-200 ease-out
-          ${isVisible && !isClosing ? "bg-black/50" : "bg-black/0"}
-        `}
-        onClick={handleClose}
-      />
-
-      {/* Modal 内容 */}
-      <div
-        className={`
-          relative bg-base-100 rounded-2xl shadow-2xl w-[650px] max-h-[85vh] overflow-hidden flex flex-col
-          transition-all duration-200 ease-out
-          ${isVisible && !isClosing
-            ? "opacity-100 scale-100 translate-y-0"
-            : "opacity-0 scale-95 translate-y-4"
-          }
-        `}
-      >
-        {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-base-300">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <HardDrive className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold">存储管理</h2>
-              <p className="text-xs text-base-content/60">
-                管理应用的图片存储
-              </p>
-            </div>
+  return (
+    <div className="h-full flex flex-col">
+      {/* 头部 */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-base-300">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <HardDrive className="w-5 h-5 text-primary" />
           </div>
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={handleClose}>
-            <X className="w-5 h-5" />
-          </button>
+          <div>
+            <h2 className="text-lg font-semibold">存储管理</h2>
+            <p className="text-xs text-base-content/60">
+              管理应用的图片存储
+            </p>
+          </div>
         </div>
+      </div>
 
-        {/* 内容区域 */}
-        <div className="flex-1 overflow-y-auto p-5">
-          {/* 加载状态 */}
-          {isLoading && (
-            <div className="flex items-center justify-center py-12">
-              <LoadingIndicator size="lg" variant="dots" className="text-primary" />
-            </div>
-          )}
-
-          {/* 错误状态 */}
-          {error && (
-            <div className="alert alert-error mb-4">
-              <AlertTriangle className="w-5 h-5" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* 根据环境渲染内容 */}
-          {!isLoading && isTauri && renderFileStorage()}
-          {!isLoading && !isTauri && renderBrowserStorage()}
-        </div>
-
-        {/* 删除确认对话框 */}
-        {deleteConfirm && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
-            <div className="bg-base-100 rounded-xl p-5 mx-4 max-w-sm shadow-xl">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-error/10 rounded-lg">
-                  <AlertTriangle className="w-5 h-5 text-error" />
-                </div>
-                <h3 className="font-semibold">确认删除</h3>
-              </div>
-              <p className="text-sm text-base-content/70 mb-5">
-                {getDeleteConfirmMessage()}
-              </p>
-              <div className="flex gap-2 justify-end">
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setDeleteConfirm(null)}
-                >
-                  取消
-                </button>
-                <button
-                  className="btn btn-error btn-sm"
-                  onClick={executeDelete}
-                >
-                  确认删除
-                </button>
-              </div>
-            </div>
+      {/* 内容区域 */}
+      <div className="flex-1 overflow-y-auto p-5">
+        {/* 加载状态 */}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <LoadingIndicator size="lg" variant="dots" className="text-primary" />
           </div>
         )}
-      </div>
-    </div>,
-    document.body
-  );
 
-  return (
-    <>
-      {modalContent}
+        {/* 错误状态 */}
+        {error && (
+          <div className="alert alert-error mb-4">
+            <AlertTriangle className="w-5 h-5" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* 根据环境渲染内容 */}
+        {!isLoading && isTauri && renderFileStorage()}
+        {!isLoading && !isTauri && renderBrowserStorage()}
+      </div>
+
+      {/* 删除确认对话框 (Portal or nested) */}
+      {deleteConfirm && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10 rounded-xl">
+          <div className="bg-base-100 rounded-xl p-5 mx-4 max-w-sm shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-error/10 rounded-lg">
+                <AlertTriangle className="w-5 h-5 text-error" />
+              </div>
+              <h3 className="font-semibold">确认删除</h3>
+            </div>
+            <p className="text-sm text-base-content/70 mb-5">
+              {getDeleteConfirmMessage()}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setDeleteConfirm(null)}
+              >
+                取消
+              </button>
+              <button
+                className="btn btn-error btn-sm"
+                onClick={executeDelete}
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 图片详情预览 */}
       {selectedImage && (
         <ImageDetailModal
@@ -549,6 +480,6 @@ export function StorageManagementModal() {
           onClose={() => setSelectedImage(null)}
         />
       )}
-    </>
+    </div>
   );
 }
