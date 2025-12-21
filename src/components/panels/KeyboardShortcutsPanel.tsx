@@ -1,16 +1,11 @@
-import { X, Keyboard } from "lucide-react";
-import { createPortal } from "react-dom";
-import { useModal, getModalAnimationClasses } from "@/hooks/useModal";
+import { Keyboard } from "lucide-react";
 
 interface ShortcutGroup {
   title: string;
   shortcuts: { keys: string[]; description: string }[];
 }
 
-interface KeyboardShortcutsPanelProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+
 
 export function KeyboardShortcutsContent() {
   const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().indexOf("MAC") >= 0;

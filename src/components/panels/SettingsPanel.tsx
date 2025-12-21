@@ -18,7 +18,7 @@ import {
   Settings,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useSettingsStore, type SettingsTab } from "@/stores/settingsStore";
 import { Select } from "@/components/ui/Select";
 import { useModal, getModalAnimationClasses } from "@/hooks/useModal";
 import type { AppSettings } from "@/types";

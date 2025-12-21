@@ -11,14 +11,13 @@ import {
   Check,
   X,
   ChevronRight,
-  GripVertical,
   BookText,
   Eye,
   User,
   Settings,
 } from "lucide-react";
 import { useCanvasStore, type SidebarView } from "@/stores/canvasStore";
-import { useUserPromptStore, type UserPrompt, type CreatePromptInput } from "@/stores/userPromptStore";
+import { useUserPromptStore, type UserPrompt } from "@/stores/userPromptStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { nodeCategories, nodeIconMap, nodeIconColors } from "@/config/nodeConfig";
 import { promptCategories, promptIconMap, promptIconColors, type PromptItem } from "@/config/promptConfig";

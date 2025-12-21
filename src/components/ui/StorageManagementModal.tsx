@@ -1,5 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
 import {
   X,
   HardDrive,
