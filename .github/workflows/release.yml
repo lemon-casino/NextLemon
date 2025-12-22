@@ -82,15 +82,3 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
-
-      # 删除 GitHub 自动附带的源码归档 (Source code zip/tar.gz)
-      - name: Remove auto-added source archives
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          rid=$(gh api repos/${{ github.repository }}/releases/tags/${{ github.ref_name }} --jq .id)
-          gh api repos/${{ github.repository }}/releases/$rid/assets \
-            --jq '.[] | select(.name=="Source code (zip)" or .name=="Source code (tar.gz)") | .id' \
-            | xargs -r -n1 -I{} gh api -X DELETE repos/${{ github.repository }}/releases/assets/{}
