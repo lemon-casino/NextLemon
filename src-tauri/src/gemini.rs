@@ -102,8 +102,9 @@ pub async fn lemon_stream_generation(app_handle: AppHandle, params: LemonStreamP
         .map_err(|e| format!("Network request failed: {}", e))?;
 
     if !response.status().is_success() {
+        let status = response.status();
         let err_text = response.text().await.unwrap_or_default();
-        return Err(format!("API Error ({}): {}", response.status(), err_text));
+        return Err(format!("API Error ({}): {}", status, err_text));
     }
 
     // 处理流
