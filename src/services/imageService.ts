@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { invoke } from "@tauri-apps/api/core";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { listen } from "@tauri-apps/api/event";
 import type { ImageGenerationParams, ImageEditParams, GenerationResponse, ProviderProtocol, ErrorDetails } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { LEMON_API_CONFIG, PROXY_PATH } from "@/config/lemonApi";
@@ -204,15 +204,92 @@ async function invokeLemonImageGeneration(
 ): Promise<GenerationResponse> {
   console.log("[imageService] 调用 Lemon API 进行生图 (Streaming)...");
 
-  let baseUrl = provider.baseUrl.replace(/\/+$/, "");
+  // Tauri 环境下使用 Native Rust Command + Event Listener 方案
+  if (isTauri()) {
+    console.log("[imageService] Tauri Native Mode: Using Rust reqwest streaming");
+    const channelId = crypto.randomUUID();
+    let accumulatedText = "";
 
-  // Web 模式下 (或强制启用 Proxy 时) 使用代理路径
-  // 注意：这里简单判断是否在浏览器环境，或者是否使用了 Lemon API
-  // 如果在 Tauri 环境但使用了 Lemon API 且想走 Stream，建议统一走 fetch，
-  // 但 Tauri 环境下 fetch 可能受 CSP 限制？通常 Tauri env 放行。
-  // 为了安全，保持之前的逻辑：Web 模式走 Proxy，Tauri 走 Direct。
-  if (!isTauri() && baseUrl === LEMON_API_CONFIG.baseUrl) {
-    console.log("[imageService] Web Mode: Switching to Proxy Path for Lemon API");
+    return new Promise(async (resolve) => {
+      // 1. 设置事件监听
+      let unlistenData: (() => void) | undefined;
+      let unlistenError: (() => void) | undefined;
+      let unlistenDone: (() => void) | undefined;
+
+      const cleanup = () => {
+        unlistenData?.();
+        unlistenError?.();
+        unlistenDone?.();
+      };
+
+      const finish = () => {
+        const match = accumulatedText.match(/!\[.*?\]\((.*?)\)/);
+        if (match && match[1]) {
+          let imageData = match[1];
+          if (imageData.startsWith("data:")) imageData = imageData.split(",")[1];
+          resolve({ imageData, text: accumulatedText });
+        } else {
+          resolve({ error: "未能从响应中提取图片", text: accumulatedText });
+        }
+      };
+
+      unlistenData = await listen<string>(`stream://${channelId}`, (event) => {
+        const chunk = event.payload;
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === "data: [DONE]") continue;
+
+          if (trimmed.startsWith("data: ")) {
+            try {
+              const jsonStr = trimmed.slice(6);
+              const data = JSON.parse(jsonStr);
+              const delta = data.choices?.[0]?.delta;
+              if (delta) {
+                const reasoning = delta.reasoning_content || "";
+                const content = delta.content || "";
+                if (reasoning) accumulatedText += `[Thinking] ${reasoning}`;
+                if (content) accumulatedText += content;
+                onProgress?.(accumulatedText);
+              }
+            } catch (e) { }
+          }
+        }
+      });
+
+      unlistenError = await listen<string>(`stream-error://${channelId}`, (event) => {
+        console.error("[imageService] Rust stream error:", event.payload);
+        cleanup();
+        resolve({ error: `流式传输中断: ${event.payload}` });
+      });
+
+      unlistenDone = await listen<void>(`stream-done://${channelId}`, () => {
+        console.log("[imageService] Rust stream done");
+        cleanup();
+        finish();
+      });
+
+      // 2. 调用 Rust 命令
+      try {
+        await invoke("lemon_stream_generation", {
+          params: {
+            ...params,
+            baseUrl: provider.baseUrl,
+            apiKey: provider.apiKey,
+            channelId
+          }
+        });
+      } catch (err) {
+        console.error("[imageService] Failed to invoke Rust command:", err);
+        cleanup();
+        resolve({ error: `启动请求失败: ${err}` });
+      }
+    });
+  }
+
+  // Web 模式逻辑
+  let baseUrl = provider.baseUrl.replace(/\/+$/, "");
+  if (baseUrl === LEMON_API_CONFIG.baseUrl) {
     baseUrl = PROXY_PATH;
   }
 
@@ -236,11 +313,7 @@ async function invokeLemonImageGeneration(
   ];
 
   try {
-    // 根据环境选择 fetch 实现
-    // 在 Tauri 环境下使用 plugin-http 的 fetch 以绕过 CORS
-    const fetchFn = isTauri() ? tauriFetch : fetch;
-
-    const response = await fetchFn(url, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -250,7 +323,7 @@ async function invokeLemonImageGeneration(
         model: params.model,
         messages,
         temperature: 0.7,
-        stream: true // 启用流式输出
+        stream: true
       })
     });
 
@@ -271,7 +344,6 @@ async function invokeLemonImageGeneration(
       return { error: "未收到响应流" };
     }
 
-    // 处理流式响应
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let accumulatedText = "";
@@ -283,9 +355,8 @@ async function invokeLemonImageGeneration(
 
       const chunk = decoder.decode(value, { stream: true });
       buffer += chunk;
-
       const lines = buffer.split("\n");
-      buffer = lines.pop() || ""; // 保留最后一个不完整的行
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
         const trimmed = line.trim();
@@ -296,40 +367,28 @@ async function invokeLemonImageGeneration(
             const jsonStr = trimmed.slice(6);
             const data = JSON.parse(jsonStr);
             const delta = data.choices?.[0]?.delta;
-
             if (delta) {
-              // 优先获取思维链内容 (DeepSeek/Gemini Thinking 模式)
               const reasoning = delta.reasoning_content || "";
               const content = delta.content || "";
-
-              if (reasoning) {
-                accumulatedText += `[Thinking] ${reasoning}`;
-              }
-              if (content) {
-                accumulatedText += content;
-              }
-
+              if (reasoning) accumulatedText += `[Thinking] ${reasoning}`;
+              if (content) accumulatedText += content;
               onProgress?.(accumulatedText);
             }
-          } catch (e) {
-            console.warn("Error parsing stream chunk:", e);
-          }
+          } catch (e) { }
         }
       }
     }
 
-    // 处理最终结果
-    const content = accumulatedText;
-    const match = content.match(/!\[.*?\]\((.*?)\)/);
+    const match = accumulatedText.match(/!\[.*?\]\((.*?)\)/);
     if (match && match[1]) {
       let imageData = match[1];
       if (imageData.startsWith("data:")) {
         imageData = imageData.split(",")[1];
       }
-      return { imageData, text: content };
+      return { imageData, text: accumulatedText };
     }
 
-    return { error: "未能从响应中提取图片", text: content };
+    return { error: "未能从响应中提取图片", text: accumulatedText };
 
   } catch (error) {
     console.error("[imageService] Lemon API stream error:", error);

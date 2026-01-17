@@ -31,6 +31,7 @@ pub fn run() {
             list_canvas_images,
             gemini_generate_content,
             gemini_generate_text,
+            lemon_stream_generation,
             process_ppt_page,
             test_ocr_connection,
             test_inpaint_connection,
