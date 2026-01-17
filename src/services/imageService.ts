@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { invoke } from "@tauri-apps/api/core";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { ImageGenerationParams, ImageEditParams, GenerationResponse, ProviderProtocol, ErrorDetails } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { LEMON_API_CONFIG, PROXY_PATH } from "@/config/lemonApi";
@@ -235,7 +236,11 @@ async function invokeLemonImageGeneration(
   ];
 
   try {
-    const response = await fetch(url, {
+    // 根据环境选择 fetch 实现
+    // 在 Tauri 环境下使用 plugin-http 的 fetch 以绕过 CORS
+    const fetchFn = isTauri() ? tauriFetch : fetch;
+
+    const response = await fetchFn(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
