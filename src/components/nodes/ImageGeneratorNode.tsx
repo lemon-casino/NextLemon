@@ -1,4 +1,4 @@
-import { memo, useCallback, useState, useRef } from "react";
+import { memo, useRef, useCallback, useState, useEffect } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { Sparkles, Zap, Play, AlertCircle, Maximize2, AlertTriangle, CircleAlert } from "lucide-react";
 import { useFlowStore } from "@/stores/flowStore";
@@ -10,7 +10,7 @@ import { ErrorDetailModal } from "@/components/ui/ErrorDetailModal";
 import { ModelSelector } from "@/components/ui/ModelSelector";
 import { useLoadingDots } from "@/hooks/useLoadingDots";
 import type { ImageGeneratorNodeData, ImageInputNodeData, ModelType } from "@/types";
-import { useImagePresetModels } from "@/config/presetModels";
+import { useImagePresetModels, getDynamicDefaultModel, type PresetModel } from "@/config/presetModels";
 
 // 定义节点类型
 type ImageGeneratorNode = Node<ImageGeneratorNodeData>;
@@ -67,6 +67,119 @@ function formatProgressText(text?: string): string {
   return content;
 }
 
+// 状态气泡组件
+function StatusBubble({ status, progress }: { status: string; progress?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [shouldRender, setShouldRender] = useState(false);
+
+  // 监听状态变化，控制渲染和动画
+  useEffect(() => {
+    if (status === "loading") {
+      setShouldRender(true);
+    } else {
+      const timer = setTimeout(() => setShouldRender(false), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [status]);
+
+  if (!shouldRender) return null;
+
+  const isExpanded = expanded && status === "loading";
+
+  // 格式化日志内容：将长文本分割为按行显示的数组，并清理格式
+  const logLines = (progress || "正在连接...")
+    .split("[Thinking]")
+    .map(line => line.replace(/\*\*/g, "").trim()) // 去除 markdown 加粗
+    .filter(line => line.length > 0);              // 过滤空行
+
+  return (
+    <div
+      className={`absolute top-0 -right-4 z-50 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${isExpanded
+          ? "w-[420px] -translate-y-4 translate-x-[calc(100%+16px)]"
+          : "w-64 translate-x-full"
+        }`}
+    >
+      <div
+        className={`
+          relative overflow-hidden
+          bg-base-100/95 backdrop-blur-2xl
+          border border-white/20 shadow-2xl shadow-primary/10
+          transition-all duration-300
+          ${isExpanded
+            ? "rounded-2xl ring-1 ring-primary/10"
+            : "rounded-full hover:bg-base-100 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+          }
+        `}
+        onClick={() => !isExpanded && setExpanded(true)}
+      >
+        {/* 收起状态的胶囊视图 */}
+        <div className={`
+          flex items-center gap-3 px-4 py-2.5 transition-opacity duration-300
+          ${isExpanded ? "opacity-0 absolute top-0 left-0 pointer-events-none" : "opacity-100"}
+        `}>
+          {/* 呼吸灯 */}
+          <div className="relative flex h-2.5 w-2.5 flex-shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-lg shadow-primary/50"></span>
+          </div>
+          {/* 单行文本 */}
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-base-content/90 truncate">
+              {formatProgressText(progress)}
+            </p>
+          </div>
+        </div>
+
+        {/* 展开状态的详细视图 */}
+        <div className={`
+          flex flex-col h-full transition-all duration-300 ease-out origin-top
+          ${isExpanded ? "opacity-100 scale-100" : "opacity-0 scale-95 absolute inset-0 pointer-events-none"}
+        `}>
+          {/* 标题栏 */}
+          <div
+            className="flex items-center justify-between px-4 py-3 border-b border-base-content/5 bg-base-200/30 cursor-pointer hover:bg-base-200/50 transition-colors"
+            onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
+          >
+            <div className="flex items-center gap-2">
+              <div className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+              </div>
+              <span className="text-xs font-bold text-primary tracking-wide">LIVE LOG</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-base-content/40 uppercase font-medium tracking-wider group">
+              <span>Collapse</span>
+              <div className="w-1.5 h-1.5 border-b border-l border-base-content/30 transform rotate-45 group-hover:-mt-0.5 transition-transform"></div>
+            </div>
+          </div>
+
+          {/* 日志内容区域 */}
+          <div className="p-4 max-h-[60vh] overflow-y-auto custom-scrollbar font-mono text-xs leading-relaxed space-y-2.5">
+            {logLines.length > 0 ? (
+              logLines.map((line, index) => (
+                <div key={index} className="flex gap-2 animate-in fade-in slide-in-from-bottom-1 duration-300 items-start">
+                  <span className="text-primary/40 mt-[3px] select-none">›</span>
+                  <span className="text-base-content/80 break-words">{line}</span>
+                </div>
+              ))
+            ) : (
+              <div className="flex items-center gap-2 text-base-content/40 italic">
+                <span className="loading loading-spinner loading-xs opacity-50"></span>
+                <span>Connecting to neural network...</span>
+              </div>
+            )}
+            {/* 底部占位，防止内容贴边 */}
+            <div className="h-1" />
+          </div>
+
+          {/* 底部装饰条 */}
+          <div className="h-0.5 w-full bg-gradient-to-r from-transparent via-primary/20 to-transparent opacity-50"></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 通用图片生成器节点组件
 function ImageGeneratorBase({
   id,
@@ -97,7 +210,9 @@ function ImageGeneratorBase({
   const { presetModels, defaultModel: configDefaultModel } = useImagePresetModels(nodeType);
 
   // 默认模型
-  const defaultModel: ModelType = (configDefaultModel as ModelType) || (isPro ? "gemini-3-pro-preview" : "gemini-2.5-flash-image");
+  // 默认模型
+  // 使用 centralized config，不再硬编码 fallback
+  const defaultModel: ModelType = (configDefaultModel as ModelType) || getDynamicDefaultModel('image');
 
   // 使用节点数据中的模型，如果没有则使用默认模型
   const model: ModelType = data.model || defaultModel;
@@ -500,24 +615,7 @@ function ImageGeneratorBase({
       </div>
 
       {/* 浮动状态气泡 - 移到节点外部避免被 clip */}
-      {data.status === "loading" && (
-        <div className="absolute top-0 -right-4 translate-x-full w-64 z-50 pointer-events-none">
-          <div className="bg-base-100/80 backdrop-blur-md border border-primary/20 shadow-xl shadow-primary/5 rounded-full px-4 py-2 flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
-            {/* 状态指示点 */}
-            <div className="relative flex h-2.5 w-2.5 flex-shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-lg shadow-primary/50"></span>
-            </div>
-
-            {/* 文本区域 */}
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-base-content/90 truncate">
-                {formatProgressText(data.progress)}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <StatusBubble status={data.status} progress={data.progress} />
 
       {/* 预览弹窗 - 支持文件路径和 base64 */}
       {showPreview && (data.outputImage || data.outputImagePath) && (

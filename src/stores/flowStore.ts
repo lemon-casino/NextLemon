@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { getDynamicDefaultModel } from "@/config/presetModels";
 import {
   addEdge,
   applyNodeChanges,
@@ -283,11 +284,7 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
       ? "NanoBanana Pro"
       : "NanoBanana";
     const { settings } = useSettingsStore.getState();
-    const generatorModel = settings.enableCustomProviders
-      // 如果使用了自定义提供商，使用默认的 Flash 模型（或后续增加更复杂的逻辑）
-      ? "gemini-2.5-flash-image"
-      // 否则使用 Lemon API 默认模型
-      : "gemini-3-pro-preview";
+    const generatorModel = getDynamicDefaultModel('image');
 
     newNodes.push({
       id: generatorNodeId,

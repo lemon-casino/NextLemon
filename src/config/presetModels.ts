@@ -110,6 +110,27 @@ export function getDefaultLLMModel(nodeType: keyof NodeProviderMapping): string 
   return DEFAULT_LLM_MODELS[protocol] || DEFAULT_LLM_MODELS.google;
 }
 
+// 核心 Helper: 获取动态默认模型 (统一入口)
+export function getDynamicDefaultModel(type: 'llm' | 'image'): string {
+  const { settings } = useSettingsStore.getState();
+
+  // 1. Lemon API 优先路径
+  if (!settings.enableCustomProviders) {
+    return type === 'image' ? "gemini-3-pro-preview" : "gemini-auto";
+  }
+
+  // 2. 自定义 Provider 路径
+  // 获取当前默认协议 (目前简单取 Google，后续可扩展)
+  // 如果需要更精确的逻辑，由于这里没有 nodeType 上下文，
+  // 我们通常返回 Google 的默认值作为 safe fallback
+  const protocol: ProviderProtocol = "google";
+
+  if (type === 'image') {
+    return DEFAULT_IMAGE_MODELS[protocol] || DEFAULT_IMAGE_MODELS.google;
+  }
+  return DEFAULT_LLM_MODELS[protocol] || DEFAULT_LLM_MODELS.google;
+}
+
 // React Hook: 获取指定节点类型的预设模型（响应式）
 export function useLLMPresetModels(nodeType: keyof NodeProviderMapping): {
   presetModels: PresetModel[];
@@ -150,7 +171,7 @@ export function useImagePresetModels(nodeType: keyof NodeProviderMapping): {
   if (!settings.enableCustomProviders) {
     return {
       presetModels: LEMON_API_IMAGE_MODELS,
-      defaultModel: "gemini-3-pro-preview", // 默认文生图模型
+      defaultModel: getDynamicDefaultModel('image'), // 使用统一 Helper
       protocol: "openai",
     };
   }
