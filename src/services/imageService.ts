@@ -97,11 +97,7 @@ interface TauriGeminiResult {
   error?: string;
 }
 
-interface TauriLLMResult {
-  success: boolean;
-  content?: string;
-  error?: string;
-}
+
 
 // 通过 Tauri 后端代理发送请求
 async function invokeGemini(params: TauriGeminiParams, provider?: { name: string; protocol: string }): Promise<GenerationResponse> {
