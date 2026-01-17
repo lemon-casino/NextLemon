@@ -56,7 +56,7 @@ export const nodeCategories: NodeCategory[] = [
         icon: "Sparkles",
         defaultData: {
           label: "NanoBanana Pro",
-          model: "gemini-3-pro-image-preview",
+          // model: "gemini-3-pro-image-preview", // 移除硬编码，使用组件内部的默认值
           aspectRatio: "1:1",
           imageSize: "1K",
           status: "idle",
@@ -71,7 +71,7 @@ export const nodeCategories: NodeCategory[] = [
         icon: "Zap",
         defaultData: {
           label: "NanoBanana",
-          model: "gemini-2.5-flash-image",
+          // model: "gemini-2.5-flash-image", // 移除硬编码
           aspectRatio: "1:1",
           status: "idle",
         },

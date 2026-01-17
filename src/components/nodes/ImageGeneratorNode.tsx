@@ -10,19 +10,16 @@ import { ErrorDetailModal } from "@/components/ui/ErrorDetailModal";
 import { ModelSelector } from "@/components/ui/ModelSelector";
 import { useLoadingDots } from "@/hooks/useLoadingDots";
 import type { ImageGeneratorNodeData, ImageInputNodeData, ModelType } from "@/types";
+import { useImagePresetModels } from "@/config/presetModels";
 
 // 定义节点类型
 type ImageGeneratorNode = Node<ImageGeneratorNodeData>;
 
-// Pro 节点预设模型选项
-const proPresetModels = [
-  { value: "gemini-3-pro-image-preview", label: "NanoBanana Pro" },
-];
+// Pro 节点预设模型选项 (已废弃，改用 hook)
+// const proPresetModels = ...
 
-// Fast 节点预设模型选项
-const fastPresetModels = [
-  { value: "gemini-2.5-flash-image", label: "NanoBanana" },
-];
+// Fast 节点预设模型选项 (已废弃，改用 hook)
+// const fastPresetModels = ...
 
 // 基础宽高比选项（NanoBanana 使用）
 const basicAspectRatioOptions = [
@@ -53,6 +50,23 @@ const imageSizeOptions = [
   { value: "4K", label: "4K" },
 ];
 
+// 格式化进度文本：提取最新内容并去除 Markdown
+function formatProgressText(text?: string): string {
+  if (!text) return "正在建立连接...";
+
+  // 1. 如果包含 [Thinking]，提取最后一个段落
+  const thinkingParts = text.split("[Thinking]");
+  let content = thinkingParts.length > 1 ? thinkingParts[thinkingParts.length - 1] : text;
+
+  // 2. 去除 Markdown 加粗符号 (**)
+  content = content.replace(/\*\*/g, "").trim();
+
+  // 3. 如果内容为空，或者只是空格
+  if (!content) return "思考中...";
+
+  return content;
+}
+
 // 通用图片生成器节点组件
 function ImageGeneratorBase({
   id,
@@ -79,10 +93,11 @@ function ImageGeneratorBase({
   const canvasIdRef = useRef<string | null>(null);
 
   // 获取对应的预设模型列表
-  const presetModels = isPro ? proPresetModels : fastPresetModels;
+  const nodeType = isPro ? "imageGeneratorPro" : "imageGeneratorFast";
+  const { presetModels, defaultModel: configDefaultModel } = useImagePresetModels(nodeType);
 
   // 默认模型
-  const defaultModel: ModelType = isPro ? "gemini-3-pro-image-preview" : "gemini-2.5-flash-image";
+  const defaultModel: ModelType = (configDefaultModel as ModelType) || (isPro ? "gemini-3-pro-preview" : "gemini-2.5-flash-image");
 
   // 使用节点数据中的模型，如果没有则使用默认模型
   const model: ModelType = data.model || defaultModel;
@@ -154,20 +169,38 @@ function ImageGeneratorBase({
       // 根据 isPro 确定节点类型
       const nodeType = isPro ? "imageGeneratorPro" : "imageGeneratorFast";
 
+      // 进度回调
+      // 进度回调
+      const onProgress = (text: string) => {
+        // 如果包含 Markdown 图片标记，通过显示特定状态来隐藏乱码
+        if (text.includes("![") || text.includes("data:image")) {
+          updateNodeDataWithCanvas(id, {
+            progress: "正在接收图片数据..."
+          });
+          return;
+        }
+
+        // 显示完整内容 (气泡会自动处理换行和截断)
+        // 移除之前的 slice(-30) 限制，让用户看到更完整的思考/绘制过程
+        updateNodeDataWithCanvas(id, {
+          progress: text || "正在连接 API..."
+        });
+      };
+
       const response = images.length > 0
         ? await editImage({
-            prompt,
-            model,
-            inputImages: images,
-            aspectRatio: data.aspectRatio,
-            imageSize: isPro ? data.imageSize : undefined,
-          }, nodeType)
+          prompt,
+          model,
+          inputImages: images,
+          aspectRatio: data.aspectRatio,
+          imageSize: isPro ? data.imageSize : undefined,
+        }, nodeType, onProgress)
         : await generateImage({
-            prompt,
-            model,
-            aspectRatio: data.aspectRatio,
-            imageSize: isPro ? data.imageSize : undefined,
-          }, nodeType);
+          prompt,
+          model,
+          aspectRatio: data.aspectRatio,
+          imageSize: isPro ? data.imageSize : undefined,
+        }, nodeType, onProgress);
 
       if (response.imageData) {
         // 在 Tauri 环境中，将图片保存到文件系统
@@ -349,7 +382,7 @@ function ImageGeneratorBase({
                     type="button"
                     className={`
                       btn btn-xs px-0
-                      ${ (data.aspectRatio || "1:1") === opt.value
+                      ${(data.aspectRatio || "1:1") === opt.value
                         ? (isPro ? "btn-primary" : "btn-warning")
                         : "btn-ghost bg-base-200"
                       }
@@ -377,7 +410,7 @@ function ImageGeneratorBase({
                       type="button"
                       className={`
                         btn btn-xs
-                        ${ (data.imageSize || "1K") === opt.value
+                        ${(data.imageSize || "1K") === opt.value
                           ? "btn-primary"
                           : "btn-ghost bg-base-200"
                         }
@@ -399,12 +432,12 @@ function ImageGeneratorBase({
           </div>
 
           {/* 生成按钮 */}
+          {/* 生成按钮 */}
           <button
-            className={`btn btn-sm w-full gap-2 ${
-              data.status === "loading" || !isPromptConnected
-                ? "btn-disabled"
-                : isPro ? "btn-primary" : "btn-warning"
-            }`}
+            className={`btn btn-sm w-full gap-2 ${data.status === "loading" || !isPromptConnected
+              ? "btn-disabled"
+              : isPro ? "btn-primary" : "btn-warning"
+              }`}
             onClick={handleGenerate}
             onPointerDown={(e) => e.stopPropagation()}
             disabled={data.status === "loading" || !isPromptConnected}
@@ -414,10 +447,10 @@ function ImageGeneratorBase({
             ) : !isPromptConnected ? (
               <span className="text-base-content/50">待连接提示词</span>
             ) : (
-              <>
+              <div className="flex items-center gap-2">
                 <Play className="w-4 h-4" />
-                生成图片
-              </>
+                <span>生成图片</span>
+              </div>
             )}
           </button>
 
@@ -458,7 +491,6 @@ function ImageGeneratorBase({
           )}
         </div>
 
-        {/* 输出端口 - image 类型 */}
         <Handle
           type="source"
           position={Position.Right}
@@ -466,6 +498,26 @@ function ImageGeneratorBase({
           className={`!w-3 !h-3 ${outputHandleColor} !border-2 !border-white`}
         />
       </div>
+
+      {/* 浮动状态气泡 - 移到节点外部避免被 clip */}
+      {data.status === "loading" && (
+        <div className="absolute top-0 -right-4 translate-x-full w-64 z-50 pointer-events-none">
+          <div className="bg-base-100/80 backdrop-blur-md border border-primary/20 shadow-xl shadow-primary/5 rounded-full px-4 py-2 flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+            {/* 状态指示点 */}
+            <div className="relative flex h-2.5 w-2.5 flex-shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary shadow-lg shadow-primary/50"></span>
+            </div>
+
+            {/* 文本区域 */}
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-base-content/90 truncate">
+                {formatProgressText(data.progress)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 预览弹窗 - 支持文件路径和 base64 */}
       {showPreview && (data.outputImage || data.outputImagePath) && (

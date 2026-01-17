@@ -36,14 +36,22 @@ export default defineConfig(async () => ({
     host: host || false,
     hmr: host
       ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
+        protocol: "ws",
+        host,
+        port: 1421,
+      }
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+    },
+    // 配置本地代理以解决 Web 模式下的 CORS 问题
+    proxy: {
+      "/api_proxy_lemon": {
+        target: "https://geminibiz.lemon.vin",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api_proxy_lemon/, ""),
+      },
     },
   },
 }));

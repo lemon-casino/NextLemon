@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { LLMModelType, Provider, ErrorDetails } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { LEMON_API_CONFIG, PROXY_PATH } from "@/config/lemonApi";
 
 // LLM 节点类型
 type LLMNodeType = "llm" | "llmContent";
@@ -51,6 +52,18 @@ interface TauriLLMResult {
 // 获取供应商配置
 function getProviderConfig(nodeType: LLMNodeType) {
   const { settings } = useSettingsStore.getState();
+  // 默认 Lemon API 配置
+  if (!settings.enableCustomProviders) {
+    console.log("[llmService] 使用默认 Lemon API");
+    return {
+      id: LEMON_API_CONFIG.id,
+      name: LEMON_API_CONFIG.name,
+      apiKey: LEMON_API_CONFIG.apiKey,
+      baseUrl: LEMON_API_CONFIG.baseUrl,
+      protocol: LEMON_API_CONFIG.protocol,
+    };
+  }
+
   const providerId = settings.nodeProviders[nodeType];
 
   if (!providerId) {
@@ -132,6 +145,11 @@ function buildErrorDetails(
 // 通过 Tauri 后端代理发送 LLM 请求
 async function invokeLLMByProtocol(params: TauriLLMParams, provider: Provider): Promise<LLMResponse> {
   const protocol = provider.protocol || "google";
+  // ... (Keep existing implementation logic if needed, but here I can't just 'keep', I have to provide it. 
+  // Wait, I can just insert invokeWebLLM BEFORE this function or AFTER it, and then modify the usage later.)
+  // Let's use INSERT strategy for invokeWebLLM and REPLACE strategy for generate functions.
+  // Actually, I will replace the generateText function block.
+  // First, let's insert invokeWebLLM.
   const command = getCommandByProtocol(protocol);
 
   console.log(`[llmService] invokeLLMByProtocol called, protocol: ${protocol}, command: ${command}`);
@@ -194,15 +212,69 @@ async function invokeLLMByProtocol(params: TauriLLMParams, provider: Provider): 
   }
 }
 
+// Web 环境下的 LLM 调用 (支持 Proxy)
+async function invokeWebLLM(params: TauriLLMParams, provider: Provider): Promise<LLMResponse> {
+  // 目前仅支持 OpenAI 协议 (Lemon API) 的 Web 回退
+  if (provider.protocol !== "openai") {
+    return { error: "Web 模式下目前仅支持 Lemon API (OpenAI 协议)" };
+  }
+
+  let baseUrl = provider.baseUrl.replace(/\/+$/, "");
+
+  // 如果是 Lemon API，在 Web 模式下强制使用本地代理路径
+  if (baseUrl === LEMON_API_CONFIG.baseUrl) {
+    console.log("[llmService] Web Mode: Switching to Proxy Path for Lemon API");
+    baseUrl = PROXY_PATH;
+  }
+
+  const url = `${baseUrl}/v1/chat/completions`;
+  console.log(`[llmService] Web Mode invoking: ${url}`);
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${provider.apiKey}`
+      },
+      body: JSON.stringify({
+        model: params.model,
+        messages: [
+          ...(params.systemPrompt ? [{ role: "system", content: params.systemPrompt }] : []),
+          { role: "user", content: params.prompt }
+        ],
+        temperature: params.temperature,
+        max_tokens: params.maxTokens,
+        stream: false
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`请求失败 (${response.status}): ${errText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || "";
+    return { content };
+
+  } catch (error) {
+    console.error("[llmService] Web fetch error:", error);
+    return {
+      error: error instanceof Error ? error.message : String(error),
+      errorDetails: buildErrorDetails(error, {
+        model: params.model,
+        provider: provider.name,
+        requestUrl: url
+      })
+    };
+  }
+}
+
 // 文本生成（PPT 内容生成节点使用）
 export async function generateText(params: LLMGenerationParams): Promise<LLMResponse> {
   try {
     const provider = getProviderConfig("llm");
-
-    // 检查是否在 Tauri 环境
-    if (!isTauri()) {
-      return { error: "此功能仅在桌面应用中可用" };
-    }
 
     const baseUrl = getBaseUrlByProtocol(provider.baseUrl, provider.protocol || "google");
     const requestParams: TauriLLMParams = {
@@ -216,6 +288,11 @@ export async function generateText(params: LLMGenerationParams): Promise<LLMResp
       files: params.files,
       responseJsonSchema: params.responseJsonSchema,
     };
+
+    // 检查是否在 Tauri 环境
+    if (!isTauri()) {
+      return await invokeWebLLM(requestParams, provider);
+    }
 
     return await invokeLLMByProtocol(requestParams, provider);
   } catch (error) {
@@ -234,11 +311,6 @@ export async function generateLLMContent(params: LLMGenerationParams): Promise<L
   try {
     const provider = getProviderConfig("llmContent");
 
-    // 检查是否在 Tauri 环境
-    if (!isTauri()) {
-      return { error: "此功能仅在桌面应用中可用" };
-    }
-
     const baseUrl = getBaseUrlByProtocol(provider.baseUrl, provider.protocol || "google");
     const requestParams: TauriLLMParams = {
       baseUrl,
@@ -251,6 +323,11 @@ export async function generateLLMContent(params: LLMGenerationParams): Promise<L
       files: params.files,
       responseJsonSchema: params.responseJsonSchema,
     };
+
+    // 检查是否在 Tauri 环境
+    if (!isTauri()) {
+      return await invokeWebLLM(requestParams, provider);
+    }
 
     return await invokeLLMByProtocol(requestParams, provider);
   } catch (error) {

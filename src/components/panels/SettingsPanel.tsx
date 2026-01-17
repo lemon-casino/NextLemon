@@ -207,7 +207,9 @@ export function SettingsPanel() {
 
           <div className="space-y-1">
             <NavItem id="general" icon={Settings} label="通用设置" />
-            <NavItem id="providers" icon={Server} label="供应商管理" />
+            {settings.enableCustomProviders && (
+              <NavItem id="providers" icon={Server} label="供应商管理" />
+            )}
             <NavItem id="storage" icon={HardDrive} label="存储管理" />
             <NavItem id="shortcuts" icon={Keyboard} label="快捷键" />
             <NavItem id="about" icon={Info} label="关于" />
@@ -256,6 +258,25 @@ export function SettingsPanel() {
                     <label className="label">
                       <span className="label-text-alt text-base-content/50">
                         选择您喜欢的界面外观风格
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="form-control">
+                    <label className="label cursor-pointer justify-start gap-4">
+                      <span className="label-text font-medium">显示供应商管理</span>
+                      <input
+                        type="checkbox"
+                        className="toggle toggle-primary"
+                        checked={settings.enableCustomProviders}
+                        onChange={(e) =>
+                          updateSettings({ enableCustomProviders: e.target.checked })
+                        }
+                      />
+                    </label>
+                    <label className="label">
+                      <span className="label-text-alt text-base-content/50">
+                        开启后可配置自定义模型供应商，关闭时使用系统默认服务
                       </span>
                     </label>
                   </div>

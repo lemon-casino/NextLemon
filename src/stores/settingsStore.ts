@@ -7,6 +7,7 @@ import { tauriStorage } from "@/utils/tauriStorage";
 const defaultSettings: AppSettings = {
   providers: [],
   nodeProviders: {},
+  enableCustomProviders: false, // 默认关闭
   theme: "light",
 };
 

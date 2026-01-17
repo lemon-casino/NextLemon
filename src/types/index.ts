@@ -104,6 +104,7 @@ export interface ImageGeneratorNodeData {
   aspectRatio: ImageGenerationParams["aspectRatio"];
   imageSize: ImageGenerationParams["imageSize"];
   status: "idle" | "loading" | "success" | "error";
+  progress?: string;        // 进度/状态信息
   outputImage?: string;     // 仍保留 base64 用于向后兼容
   outputImagePath?: string; // 新增：文件系统路径
   error?: string;
@@ -226,6 +227,7 @@ export interface NodeProviderMapping {
 export interface AppSettings {
   providers: Provider[];              // 供应商列表
   nodeProviders: NodeProviderMapping; // 节点类型 -> 供应商映射
+  enableCustomProviders: boolean;     // 是否启用自定义供应商管理
   theme: "light" | "dark" | "system";
 }
 

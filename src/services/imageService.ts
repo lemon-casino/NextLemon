@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { invoke } from "@tauri-apps/api/core";
 import type { ImageGenerationParams, ImageEditParams, GenerationResponse, ProviderProtocol, ErrorDetails } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { LEMON_API_CONFIG, PROXY_PATH } from "@/config/lemonApi";
 
 // 图片节点类型
 type ImageNodeType = "imageGeneratorPro" | "imageGeneratorFast";
@@ -33,6 +34,20 @@ function getApiBaseUrl(baseUrl: string, protocol: ProviderProtocol): string {
 function getProviderConfig(nodeType: ImageNodeType) {
   const { settings } = useSettingsStore.getState();
   const providerId = settings.nodeProviders[nodeType];
+
+  // 默认 Lemon API 配置
+  // 默认 Lemon API 配置
+  if (!settings.enableCustomProviders) {
+    return {
+      id: LEMON_API_CONFIG.imageId,
+      name: LEMON_API_CONFIG.name,
+      apiKey: LEMON_API_CONFIG.apiKey,
+      baseUrl: LEMON_API_CONFIG.baseUrl,
+      protocol: LEMON_API_CONFIG.protocol,
+    };
+  }
+
+
 
   if (!providerId) {
     throw new Error("请先在供应商管理中配置此节点的供应商");
@@ -79,6 +94,25 @@ interface TauriGeminiResult {
   success: boolean;
   imageData?: string;
   text?: string;
+  error?: string;
+}
+
+// 复制自 llmService.ts，用于调用 OpenAI 格式的 Chat 接口
+interface TauriLLMParams {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  prompt: string;
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  files?: Array<{ data: string; mimeType: string; fileName?: string }>;
+  responseJsonSchema?: Record<string, unknown>;
+}
+
+interface TauriLLMResult {
+  success: boolean;
+  content?: string;
   error?: string;
 }
 
@@ -177,10 +211,152 @@ async function invokeGemini(params: TauriGeminiParams, provider?: { name: string
   }
 }
 
+// 专门用于处理 Lemon API 的图像生成（通过 OpenAI Chat 接口返回 Markdown 图片）
+// 专门用于处理 Lemon API 的图像生成（通过 OpenAI Chat 接口返回 Markdown 图片）
+async function invokeLemonImageGeneration(
+  params: { prompt: string; inputImages?: string[]; model: string },
+  provider: { baseUrl: string; apiKey: string },
+  onProgress?: (text: string) => void
+): Promise<GenerationResponse> {
+  console.log("[imageService] 调用 Lemon API 进行生图 (Streaming)...");
+
+  let baseUrl = provider.baseUrl.replace(/\/+$/, "");
+
+  // Web 模式下 (或强制启用 Proxy 时) 使用代理路径
+  // 注意：这里简单判断是否在浏览器环境，或者是否使用了 Lemon API
+  // 如果在 Tauri 环境但使用了 Lemon API 且想走 Stream，建议统一走 fetch，
+  // 但 Tauri 环境下 fetch 可能受 CSP 限制？通常 Tauri env 放行。
+  // 为了安全，保持之前的逻辑：Web 模式走 Proxy，Tauri 走 Direct。
+  if (!isTauri() && baseUrl === LEMON_API_CONFIG.baseUrl) {
+    console.log("[imageService] Web Mode: Switching to Proxy Path for Lemon API");
+    baseUrl = PROXY_PATH;
+  }
+
+  const url = `${baseUrl}/v1/chat/completions`;
+
+  const messages: unknown[] = [
+    {
+      role: "user",
+      content: params.inputImages && params.inputImages.length > 0
+        ? [
+          { type: "text", text: params.prompt },
+          ...params.inputImages.map(img => ({
+            type: "image_url",
+            image_url: {
+              url: img.startsWith("data:") ? img : `data:image/png;base64,${img}`
+            }
+          }))
+        ]
+        : params.prompt
+    }
+  ];
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${provider.apiKey}`
+      },
+      body: JSON.stringify({
+        model: params.model,
+        messages,
+        temperature: 0.7,
+        stream: true // 启用流式输出
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return {
+        error: `请求失败 (${response.status})`,
+        errorDetails: {
+          name: "LemonAPIError",
+          message: errText,
+          provider: "Lemon AI",
+          model: params.model
+        }
+      };
+    }
+
+    if (!response.body) {
+      return { error: "未收到响应流" };
+    }
+
+    // 处理流式响应
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = "";
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // 保留最后一个不完整的行
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === "data: [DONE]") continue;
+
+        if (trimmed.startsWith("data: ")) {
+          try {
+            const jsonStr = trimmed.slice(6);
+            const data = JSON.parse(jsonStr);
+            const delta = data.choices?.[0]?.delta;
+
+            if (delta) {
+              // 优先获取思维链内容 (DeepSeek/Gemini Thinking 模式)
+              const reasoning = delta.reasoning_content || "";
+              const content = delta.content || "";
+
+              if (reasoning) {
+                accumulatedText += `[Thinking] ${reasoning}`;
+              }
+              if (content) {
+                accumulatedText += content;
+              }
+
+              onProgress?.(accumulatedText);
+            }
+          } catch (e) {
+            console.warn("Error parsing stream chunk:", e);
+          }
+        }
+      }
+    }
+
+    // 处理最终结果
+    const content = accumulatedText;
+    const match = content.match(/!\[.*?\]\((.*?)\)/);
+    if (match && match[1]) {
+      let imageData = match[1];
+      if (imageData.startsWith("data:")) {
+        imageData = imageData.split(",")[1];
+      }
+      return { imageData, text: content };
+    }
+
+    return { error: "未能从响应中提取图片", text: content };
+
+  } catch (error) {
+    console.error("[imageService] Lemon API stream error:", error);
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+
+
+// 文本生成图片
 // 文本生成图片
 export async function generateImage(
   params: ImageGenerationParams,
   nodeType: ImageNodeType,
+  onProgress?: (text: string) => void,
   abortSignal?: AbortSignal
 ): Promise<GenerationResponse> {
   try {
@@ -190,6 +366,15 @@ export async function generateImage(
 
     // 在 Tauri 环境中使用后端代理
     if (isTauri()) {
+      // Lemon API 特殊处理
+      // 检查 ID 是否匹配 (默认 Lemon API ID 或 Image ID)
+      if (provider.protocol === "openai" && (provider.id === LEMON_API_CONFIG.id || provider.id === LEMON_API_CONFIG.imageId)) {
+        return await invokeLemonImageGeneration({
+          prompt: params.prompt,
+          model: params.model
+        }, provider, onProgress);
+      }
+
       return await invokeGemini(
         {
           baseUrl: apiBaseUrl,
@@ -203,7 +388,16 @@ export async function generateImage(
       );
     }
 
-    // Web 环境使用 SDK
+    // Web 环境 (或 Tauri 检测失败)
+    // 如果是 OpenAI 协议 (如 Lemon API)，也使用 invokeLemonImageGeneration (复用其 Stream 逻辑)
+    if (provider.protocol === "openai") {
+      return await invokeLemonImageGeneration({
+        prompt: params.prompt,
+        model: params.model
+      }, provider, onProgress);
+    }
+
+    // Google 协议则继续使用 SDK
     const client = createClient(nodeType);
 
     const response = await client.models.generateContent({
@@ -251,6 +445,7 @@ export async function generateImage(
 export async function editImage(
   params: ImageEditParams,
   nodeType: ImageNodeType,
+  onProgress?: (text: string) => void,
   abortSignal?: AbortSignal
 ): Promise<GenerationResponse> {
   console.log("[imageService] editImage called, images count:", params.inputImages?.length || 0);
@@ -263,6 +458,15 @@ export async function editImage(
     // 在 Tauri 环境中使用后端代理
     if (isTauri()) {
       console.log("[imageService] Using Tauri backend proxy");
+      // Lemon API 特殊处理
+      if (provider.protocol === "openai" && (provider.id === LEMON_API_CONFIG.id || provider.id === LEMON_API_CONFIG.imageId)) {
+        return await invokeLemonImageGeneration({
+          prompt: params.prompt,
+          model: params.model,
+          inputImages: params.inputImages
+        }, provider, onProgress);
+      }
+
       return await invokeGemini(
         {
           baseUrl: apiBaseUrl,
@@ -277,10 +481,20 @@ export async function editImage(
       );
     }
 
+    // Web 环境 (或 Tauri 检测失败) - OpenAI 协议处理
+    if (provider.protocol === "openai") {
+      return await invokeLemonImageGeneration({
+        prompt: params.prompt,
+        model: params.model,
+        inputImages: params.inputImages
+      }, provider, onProgress);
+    }
+
     console.log("[imageService] Using browser SDK (not Tauri)");
     // Web 环境使用 SDK
     const client = createClient(nodeType);
 
+    // Google SDK Logic ...
     const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
       { text: params.prompt },
     ];
@@ -288,10 +502,12 @@ export async function editImage(
     // 添加所有输入图片
     if (params.inputImages && params.inputImages.length > 0) {
       for (const imageData of params.inputImages) {
+        // SDK expects pure base64
+        const cleanData = imageData.replace(/^data:image\/\w+;base64,/, "");
         parts.push({
           inlineData: {
             mimeType: "image/png",
-            data: imageData,
+            data: cleanData,
           },
         });
       }
