@@ -10,7 +10,7 @@ import { ErrorDetailModal } from "@/components/ui/ErrorDetailModal";
 import { ModelSelector } from "@/components/ui/ModelSelector";
 import { useLoadingDots } from "@/hooks/useLoadingDots";
 import type { ImageGeneratorNodeData, ImageInputNodeData, ModelType } from "@/types";
-import { useImagePresetModels, getDynamicDefaultModel, type PresetModel } from "@/config/presetModels";
+import { useImagePresetModels, getDynamicDefaultModel } from "@/config/presetModels";
 
 // 定义节点类型
 type ImageGeneratorNode = Node<ImageGeneratorNodeData>;
@@ -95,8 +95,8 @@ function StatusBubble({ status, progress }: { status: string; progress?: string 
   return (
     <div
       className={`absolute top-0 -right-4 z-50 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${isExpanded
-          ? "w-[420px] -translate-y-4 translate-x-[calc(100%+16px)]"
-          : "w-64 translate-x-full"
+        ? "w-[420px] -translate-y-4 translate-x-[calc(100%+16px)]"
+        : "w-64 translate-x-full"
         }`}
     >
       <div

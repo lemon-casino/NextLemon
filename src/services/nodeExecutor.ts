@@ -233,26 +233,28 @@ async function executeImageGeneratorNode(
     const response =
       images.length > 0
         ? await editImage(
-            {
-              prompt,
-              model: data.model,
-              inputImages: images,
-              aspectRatio: data.aspectRatio,
-              imageSize: isPro ? data.imageSize : undefined,
-            },
-            nodeType,
-            signal
-          )
+          {
+            prompt,
+            model: data.model,
+            inputImages: images,
+            aspectRatio: data.aspectRatio,
+            imageSize: isPro ? data.imageSize : undefined,
+          },
+          nodeType,
+          undefined, // onProgress
+          signal
+        )
         : await generateImage(
-            {
-              prompt,
-              model: data.model,
-              aspectRatio: data.aspectRatio,
-              imageSize: isPro ? data.imageSize : undefined,
-            },
-            nodeType,
-            signal
-          );
+          {
+            prompt,
+            model: data.model,
+            aspectRatio: data.aspectRatio,
+            imageSize: isPro ? data.imageSize : undefined,
+          },
+          nodeType,
+          undefined, // onProgress
+          signal
+        );
 
     // 检查是否被取消
     if (signal?.aborted) {

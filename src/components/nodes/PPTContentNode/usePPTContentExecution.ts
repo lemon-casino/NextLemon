@@ -345,6 +345,7 @@ export function usePPTContentExecution({
             imageSize: data.imageConfig.imageSize,
           },
           "imageGeneratorPro",
+          undefined, // onProgress
           abortController.signal
         );
 

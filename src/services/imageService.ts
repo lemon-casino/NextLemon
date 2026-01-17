@@ -97,19 +97,6 @@ interface TauriGeminiResult {
   error?: string;
 }
 
-// 复制自 llmService.ts，用于调用 OpenAI 格式的 Chat 接口
-interface TauriLLMParams {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  prompt: string;
-  systemPrompt?: string;
-  temperature?: number;
-  maxTokens?: number;
-  files?: Array<{ data: string; mimeType: string; fileName?: string }>;
-  responseJsonSchema?: Record<string, unknown>;
-}
-
 interface TauriLLMResult {
   success: boolean;
   content?: string;

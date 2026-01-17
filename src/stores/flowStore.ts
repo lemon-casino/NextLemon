@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { useSettingsStore } from "@/stores/settingsStore";
 import { getDynamicDefaultModel } from "@/config/presetModels";
 import {
   addEdge,
@@ -283,7 +282,6 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
     const generatorLabel = template.generatorType === "pro"
       ? "NanoBanana Pro"
       : "NanoBanana";
-    const { settings } = useSettingsStore.getState();
     const generatorModel = getDynamicDefaultModel('image');
 
     newNodes.push({
