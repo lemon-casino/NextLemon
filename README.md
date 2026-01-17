@@ -3,7 +3,7 @@
   <h1>NextLemon</h1>
   <p>基于可视化节点的 AI 内容生成工作流工具</p>
 
-  ![Version](https://img.shields.io/badge/version-0.0.4-blue.svg)
+  ![Version](https://img.shields.io/badge/version-0.0.5-blue.svg)
   ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)
   ![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8DB.svg?logo=tauri&logoColor=white)
   ![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=white)
