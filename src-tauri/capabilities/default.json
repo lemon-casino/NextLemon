@@ -37,6 +37,8 @@
     "fs:allow-home-read",
     "fs:write-all",
     "fs:read-all",
-    "store:default"
+    "store:default",
+    "window-state:default",
+    "notification:default"
   ]
 }

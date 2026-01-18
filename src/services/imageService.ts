@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import type { ImageGenerationParams, ImageEditParams, GenerationResponse, ProviderProtocol, ErrorDetails } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { LEMON_API_CONFIG, PROXY_PATH } from "@/config/lemonApi";
@@ -223,11 +224,29 @@ async function invokeLemonImageGeneration(
         unlistenDone?.();
       };
 
-      const finish = () => {
+      const finish = async () => {
         const match = accumulatedText.match(/!\[.*?\]\((.*?)\)/);
         if (match && match[1]) {
           let imageData = match[1];
           if (imageData.startsWith("data:")) imageData = imageData.split(",")[1];
+
+          // 发送原生通知
+          try {
+            let permissionGranted = await isPermissionGranted();
+            if (!permissionGranted) {
+              const permission = await requestPermission();
+              permissionGranted = permission === 'granted';
+            }
+            if (permissionGranted) {
+              sendNotification({
+                title: '图片生成完成',
+                body: `您的 AI 绘图已准备就绪 (耗时: ${params.prompt.length > 20 ? params.prompt.slice(0, 20) + "..." : params.prompt})`,
+              });
+            }
+          } catch (e) {
+            console.warn("[imageService] Notification failed:", e);
+          }
+
           resolve({ imageData, text: accumulatedText });
         } else {
           resolve({ error: "未能从响应中提取图片", text: accumulatedText });
