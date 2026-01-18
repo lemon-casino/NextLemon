@@ -118,18 +118,18 @@ pub async fn lemon_stream_generation(app_handle: AppHandle, params: LemonStreamP
                 Ok(chunk) => {
                     if let Ok(text) = String::from_utf8(chunk.to_vec()) {
                          // 直接将原始 chunk 文本发送给前端，由前端解析 SSE
-                        let _ = app_handle.emit(&format!("stream://{}", channel_id), text);
+                        let _ = app_handle.emit::<String>(&format!("stream://{}", channel_id), text);
                     }
                 },
                 Err(e) => {
                     println!("[Rust] Stream error: {}", e);
-                    let _ = app_handle.emit(&format!("stream-error://{}", channel_id), e.to_string());
+                    let _ = app_handle.emit::<String>(&format!("stream-error://{}", channel_id), e.to_string());
                     break;
                 }
             }
         }
         // 发送完成信号
-        let _ = app_handle.emit(&format!("stream-done://{}", channel_id), ());
+        let _ = app_handle.emit::<()>(&format!("stream-done://{}", channel_id), ());
     });
 
     Ok(())

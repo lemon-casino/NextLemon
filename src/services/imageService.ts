@@ -215,6 +215,7 @@ async function invokeLemonImageGeneration(
       let unlistenData: (() => void) | undefined;
       let unlistenError: (() => void) | undefined;
       let unlistenDone: (() => void) | undefined;
+      let buffer = ""; // 添加缓冲区处理跨包数据
 
       const cleanup = () => {
         unlistenData?.();
@@ -235,7 +236,11 @@ async function invokeLemonImageGeneration(
 
       unlistenData = await listen<string>(`stream://${channelId}`, (event) => {
         const chunk = event.payload;
-        const lines = chunk.split("\n");
+        buffer += chunk; // 追加到缓冲区
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // 保留最后一个不完整的行
+
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed || trimmed === "data: [DONE]") continue;
@@ -252,7 +257,10 @@ async function invokeLemonImageGeneration(
                 if (content) accumulatedText += content;
                 onProgress?.(accumulatedText);
               }
-            } catch (e) { }
+            } catch (e) {
+              // JSON parse error usually means incomplete chunk in line, but we split by \n so it should be a full frame. 
+              // However, sometimes data can be malformed.
+            }
           }
         }
       });
