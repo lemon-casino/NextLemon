@@ -8,7 +8,7 @@ import {
   Server,
   HardDrive,
   Keyboard,
-  Github,
+
   ExternalLink,
   RefreshCw,
   CheckCircle,
@@ -25,7 +25,7 @@ import type { AppSettings } from "@/types";
 import {
   checkForUpdates,
   getCurrentVersion,
-  GITHUB_REPO,
+
   PROJECT_INFO,
   type UpdateInfo,
 } from "@/services/updateService";
@@ -118,9 +118,7 @@ export function SettingsPanel() {
     }
   };
 
-  const handleOpenGitHub = async () => {
-    await openUrl(GITHUB_REPO.url);
-  };
+
 
   const handleOpenRelease = async () => {
     if (updateInfo?.releaseUrl) {
@@ -338,22 +336,7 @@ export function SettingsPanel() {
                     </div>
                   </div>
 
-                  {/* GitHub 仓库链接 */}
-                  <div
-                    className="flex items-center justify-between p-4 bg-base-200 rounded-xl cursor-pointer hover:bg-base-300 transition-colors border border-transparent hover:border-base-content/10"
-                    onClick={handleOpenGitHub}
-                  >
-                    <div className="flex items-center gap-4">
-                      <Github className="w-6 h-6" />
-                      <div>
-                        <div className="font-bold">GitHub 仓库</div>
-                        <div className="text-sm text-base-content/50">
-                          {GITHUB_REPO.owner}/{GITHUB_REPO.repo}
-                        </div>
-                      </div>
-                    </div>
-                    <ExternalLink className="w-4 h-4 text-base-content/30" />
-                  </div>
+
 
                   {/* 检测更新按钮 */}
                   <button

@@ -16,7 +16,7 @@ export const GITHUB_REPO = {
 export const PROJECT_INFO = {
   name: "NextLemon",
   description: "基于可视化节点的 AI 内容生成工作流工具",
-  author: "lemon-casino",
+  author: "Lemon",
   license: "AGPL-3.0",
 };
 
