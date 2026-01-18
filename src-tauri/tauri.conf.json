@@ -20,7 +20,7 @@
         "center": true,
         "resizable": true,
         "fullscreen": false,
-        "dragDropEnabled": true,
+        "dragDropEnabled": false,
         "useHttpsScheme": true
       }
     ],

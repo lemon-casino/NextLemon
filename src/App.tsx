@@ -5,8 +5,6 @@ import { Toolbar } from "@/components/Toolbar";
 import { FlowCanvas } from "@/components/FlowCanvas";
 import { Sidebar } from "@/components/Sidebar";
 import { SettingsPanel } from "@/components/panels";
-// import { ProviderPanel } from "@/components/panels/ProviderPanel"; // Removed
-// import { StorageManagementModal } from "@/components/ui/StorageManagementModal"; // Removed
 import { ToastContainer } from "@/components/ui/Toast";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useFlowStore } from "@/stores/flowStore";
@@ -111,8 +109,20 @@ function App() {
       }
     };
 
+    // 阻止浏览器默认的拖拽打开行为
+    const preventDefaultDrag = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("dragover", preventDefaultDrag);
+    window.addEventListener("drop", preventDefaultDrag);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("dragover", preventDefaultDrag);
+      window.removeEventListener("drop", preventDefaultDrag);
+    };
   }, [isHelpOpen, openHelp, closeHelp]);
 
   // 拖拽开始处理
