@@ -45,7 +45,7 @@ interface FlowStore {
   onNodesChange: OnNodesChange<CustomNode>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
-  addNode: (type: string, position: { x: number; y: number }, data: CustomNodeData) => string;
+  addNode: (type: string, position: { x: number; y: number }, data: CustomNodeData, nodeId?: string) => string;
   addPromptTemplate: (
     position: { x: number; y: number },
     promptText: string,
@@ -216,9 +216,9 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
     });
   },
 
-  addNode: (type, position, data) => {
+  addNode: (type, position, data, nodeId) => {
     get().saveToHistory();
-    const id = uuidv4();
+    const id = nodeId || uuidv4();
     const newNode: CustomNode = {
       id,
       type,
