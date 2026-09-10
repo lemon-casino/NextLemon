@@ -11,6 +11,7 @@ import {
   Image,
   ImageDown,
   Images,
+  Wand2,
   Lock,
   PackageOpen,
   Palette,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { exportCreativeCanvasImage } from "@/services/creativeCanvasExport";
 import { CreativeCanvasMinimap } from "@/components/creative/CreativeCanvasMinimap";
+import { AssetMentionTextarea } from "@/components/creative/AssetMentionTextarea";
 import { findItemsInRect } from "@/services/creativeCanvasGeometry";
 import { AgentPanel } from "@/components/agent/AgentPanel";
 import { BrandKitPanel } from "@/components/creative/BrandKitPanel";
@@ -97,6 +99,8 @@ export function CreativeWorkspace() {
   const undoCanvas = useCreativeStore((state) => state.undoCanvas);
   const redoCanvas = useCreativeStore((state) => state.redoCanvas);
   const [imageExportRunning, setImageExportRunning] = useState(false);
+  const autoSinkEnabled = useCreativeStore((state) => state.autoSinkEnabled);
+  const setAutoSinkEnabled = useCreativeStore((state) => state.setAutoSinkEnabled);
 
   const selectedItem = useMemo(
     () => canvas.items.find((item) => item.id === selectedItemIds[0]) || null,
@@ -309,6 +313,16 @@ export function CreativeWorkspace() {
               onClick={() => void handleExportImage("jpeg")}
             >
               <Images className="h-4 w-4" />
+            </button>
+            <button
+              className={`btn btn-sm btn-circle ${autoSinkEnabled ? "btn-success" : "btn-ghost"}`}
+              title="自动沉淀：工作流生成完成后，结果自动保存为素材并放入创作画布（执行中显示占位）"
+              onClick={() => {
+                setAutoSinkEnabled(!autoSinkEnabled);
+                toast.info(autoSinkEnabled ? "自动沉淀已关闭" : "自动沉淀已开启，生成结果将自动放入创作画布");
+              }}
+            >
+              <Wand2 className="h-4 w-4" />
             </button>
             <button
               className="btn btn-ghost btn-sm btn-circle text-error hover:bg-error/10"
@@ -745,6 +759,7 @@ function CreativeCanvasItemView({
 }) {
   const [editing, setEditing] = useState(false);
   const updateAsset = useCreativeStore((state) => state.updateAsset);
+  const assets = useCreativeStore((state) => state.assets);
   const previewUrl = getCreativeAssetPreviewUrl(asset);
 
   const itemStyle: CSSProperties = {
@@ -784,16 +799,15 @@ function CreativeCanvasItemView({
       <div className="h-full w-full overflow-hidden rounded-md">
         {asset.kind === "text" && (
           editing ? (
-            <textarea
+            <AssetMentionTextarea
               autoFocus
+              assets={assets}
               className="h-full w-full resize-none bg-base-100 p-4 pt-9 text-sm outline-none"
               value={asset.text || ""}
-              onChange={(event) => updateAsset(asset.id, { text: event.target.value })}
+              onChange={(text) => updateAsset(asset.id, { text })}
               onBlur={() => setEditing(false)}
               onPointerDown={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setEditing(false);
-              }}
+              onEscape={() => setEditing(false)}
             />
           ) : (
             <div className="h-full w-full overflow-auto whitespace-pre-wrap break-words p-4 pt-9 text-sm text-base-content">

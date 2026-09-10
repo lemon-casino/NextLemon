@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   assetLabelMap,
+  buildMentionInsertion,
   deriveUpstreamAssetRefs,
   extractAssetMentions,
+  findActiveMentionTrigger,
   findUnresolvedAssetMentions,
 } from "@/services/creativeAssetService";
 
@@ -44,5 +46,18 @@ describe("asset mentions", () => {
 
   it("builds an assetId to label map skipping unlabeled assets", () => {
     expect(assetLabelMap([{ id: "a", label: "asset_0" }, { id: "b" }])).toEqual({ a: "asset_0" });
+  });
+  it("detects active mention triggers before the caret", () => {
+    expect(findActiveMentionTrigger("参考 @", 4)).toBe(3);
+    expect(findActiveMentionTrigger("参考 @[asset_", 11)).toBe(3);
+    expect(findActiveMentionTrigger("参考 @[asset_2]", 15)).toBeNull();
+    expect(findActiveMentionTrigger("参考 @ 已结束", 8)).toBeNull();
+    expect(findActiveMentionTrigger("无提及", 3)).toBeNull();
+  });
+
+  it("inserts a full mention token replacing the partial input", () => {
+    const next = buildMentionInsertion("参考 @[asset_", 13, 3, "asset_2");
+    expect(next.text).toBe("参考 @[asset_2]");
+    expect(next.caret).toBe(13);
   });
 });

@@ -36,6 +36,8 @@ interface CreativeStore {
   canvas: CreativeCanvasData;
   selectedItemIds: string[];
   tombstones: CreativeTombstone[];
+  // 工作流生成结果自动沉淀为创作画布实例（含执行占位），默认关闭
+  autoSinkEnabled: boolean;
   _hasHydrated: boolean;
   _history: CreativeHistoryState;
   canUndo: boolean;
@@ -60,6 +62,7 @@ interface CreativeStore {
   clearCanvas: () => void;
   undoCanvas: () => void;
   redoCanvas: () => void;
+  setAutoSinkEnabled: (enabled: boolean) => void;
   resetCanvasHistory: () => void;
   restoreWorkspaceState: (next: {
     assets: CreativeAsset[];
@@ -196,6 +199,7 @@ export const useCreativeStore = create<CreativeStore>()(
       canvas: createInitialCanvas(),
       selectedItemIds: [],
       tombstones: [],
+      autoSinkEnabled: false,
       _hasHydrated: false,
       _history: createCreativeHistory(createInitialCanvas()),
       canUndo: false,
@@ -393,6 +397,10 @@ export const useCreativeStore = create<CreativeStore>()(
         applyHistory(history);
       },
 
+      setAutoSinkEnabled: (enabled) => {
+        set({ autoSinkEnabled: enabled });
+      },
+
       resetCanvasHistory: () => {
         set({
           _history: createCreativeHistory(get().canvas),
@@ -434,6 +442,7 @@ export const useCreativeStore = create<CreativeStore>()(
         canvas: state.canvas,
         selectedItemIds: state.selectedItemIds,
         tombstones: state.tombstones,
+        autoSinkEnabled: state.autoSinkEnabled,
       }),
       onRehydrateStorage: () => () => {
         useCreativeStore.setState({

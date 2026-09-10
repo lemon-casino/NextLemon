@@ -348,6 +348,7 @@ PR 11 当前边界：
 
 增强批次已落地：
 
+- 自动沉淀与执行占位 + @提及输入 UI：`creativeStore` 新增 `autoSinkEnabled` 开关（创作画布工具栏 Wand2 按钮切换，默认关闭）；`creativeAutoSink` 在 `flowStore.executeFromNode` 前后挂钩——开启时执行先放"生成中…"占位实例，完成后用 `workflowAssetService` 抽取节点产物素材替换占位（按索引并排落位），失败或无产物移除占位；`AssetMentionTextarea` 组件在创作画布文本素材编辑中支持输入 `@` 弹出素材选择列表（label/标题过滤、↑↓/回车/点击插入、portal 渲染规避画布 transform），触发检测与插入由 `findActiveMentionTrigger`/`buildMentionInsertion` 纯函数驱动。
 - @提及引用 + 吸附参考线 + 小地图：`creativeAssetService` 新增 `extractAssetMentions` / `findUnresolvedAssetMentions`（@[asset_N] 解析与校验）、`deriveUpstreamAssetRefs`（沿工作流入边反向遍历收集上游素材引用，带环守卫）与 `assetLabelMap`；Agent 工具循环创建文本素材时未解析提及直接拒绝并把错误回填模型修正，系统提示词说明提及语法；工作区快照每个工作流节点附带 `upstreamAssetLabels`；设计计划提示词按品牌 Logo/参考图自动注入 `@[asset_N]` 引用段。创作画布拖拽新增 `computeSnapAdjustment` 三边吸附（阈值 6px）与红色对齐参考线渲染；新增 `CreativeCanvasMinimap` 小地图组件（`computeMinimapFrame` 取景：可见实例 ∪ 视口，实例缩略、视口指示框、点击居中跳转）。
 - 同步墓碑机制 + 画布体验件：`CreativeTombstone` 在 creativeStore（removeAssets 连带其画布实例、removeItems、clearCanvas）与 brandKitStore（deleteBrandKit，空列表兜底新建的默认套件不记墓碑）删除时记录并持久化；项目包导出/导入合并墓碑；`applyTombstones` 按 "deletedAt > updatedAt 即删除、删除后更新则复活" 裁决合并结果；`syncProjectPackage` 把合并后的墓碑写回两个 Store，删除操作从此可跨端传播。创作画布新增 Shift+拖拽框选（`findItemsInRect` 相交命中、支持反向拖拽与追加选择）与 PNG/JPG 导出（`computeCreativeCanvasExportBounds` 外包边界 + 离屏 canvas 重绘：图片走原始字节转 dataUrl 防跨域污染、文本逐字换行、视频/音频占位卡片，长边上限 4096，Tauri 保存对话框 / 浏览器下载）。
 - asset_label 规范寻址 + ask_user 人机回路 + 事件游标断点续传：`CreativeAsset.label` 由 `nextAssetLabel` 自动分配（asset_N 递增），工作区快照携带 label，`findAssetIdByRef` 让 `asset.update` / `canvas.addAssetItem` 工具同时接受真实 ID 或规范标签，工具循环系统提示词引导模型优先引用标签；`agentToolLoop` 新增 `ask_user` 人机回路工具——模型提问即挂起并把 `pendingAskUser` 写入会话元数据，Agent 面板渲染问题卡片与编号选项，用户回答（点选项或直接输入）作为 tool 结果回填后自动续跑，会话元数据持久化使重启后问题仍在；`muApiEventStream` 纯函数状态机实现 `?since=` 游标断点续传、按 event id 去重（seenEventIds 上限 500）、6 分钟死空看门狗，`pollMuApiJobEvents` 断点续拉并回写会话元数据，chat 发送返回初始游标，切换到挂着远端 job 的会话自动静默续拉一次，RemoteJobCard 新增"同步"按钮。
@@ -453,12 +454,14 @@ PR 12 当前边界：
 | infinite-canvas：框选多选 | `creativeCanvasGeometry.findItemsInRect` 相交命中（支持反向拖拽），Shift+左键拖空白框选，支持在现有选择集上追加，画布实时渲染选框 |
 | infinite-canvas：@提及引用 | `@[asset_N]` 内嵌语法：`extractAssetMentions`/`findUnresolvedAssetMentions` 解析与校验，`asset.create` 文本中未解析提及直接拒绝（模型自我修正），`deriveUpstreamAssetRefs` 沿连线拓扑推导节点上游素材并在快照中输出 `upstreamAssetLabels`，设计计划提示词自动注入品牌 Logo/参考图的可引用标签 |
 | infinite-canvas：吸附参考线 + 小地图 | `computeSnapAdjustment` 纯函数（左/中/右、上/中/下三边对齐吸附，阈值 6px）+ 拖拽实时红色参考线；`computeMinimapFrame` 取景纯函数 + `CreativeCanvasMinimap` 组件（实例缩略、视口指示框、点击居中跳转） |
+| Open-AI-Design-Agent：执行占位 + 生成结果落画布 | `creativeAutoSink`：创作画布工具栏"自动沉淀"开关（默认关闭），开启后工作流节点执行先放"生成中"占位实例，完成后用节点产物素材（复用 `workflowAssetService`）替换占位并按索引并排落位，失败/无产物移除占位；flowStore.executeFromNode 前后挂钩 |
+| infinite-canvas：@提及输入 UI | `AssetMentionTextarea`：文本素材编辑输入 `@` 弹出素材选择列表（label+标题过滤、↑↓/回车/点击插入，portal 渲染避免画布 transform 缩放），`findActiveMentionTrigger`/`buildMentionInsertion` 纯函数驱动 |
 
 仍未吸收、留作后续增强的设计（按建议优先级排序）：
 
-1. Agent 执行占位（loader 节点预判落位）：NextLemon 的生成发生在工作流画布而非创作画布，结果不自动落画布，占位节点缺少落点语义；若后续实现"生成结果自动沉淀为创作画布实例"，可一并落地（Open-AI-Design-Agent）。
-2. @提及输入 UI（提示词编辑器内的 @ 弹出素材选择列表）；`@[asset_N]` 解析、校验与拓扑推导服务已落地。
-3. 画布体验件余项：吸附对齐支持按间距等分吸附（当前仅边/中线）。
+1. @提及输入 UI 推广到工作流 Prompt 节点编辑器（创作画布文本编辑已支持 @ 弹出选择）。
+2. 画布体验件余项：吸附对齐支持按间距等分吸附（当前仅边/中线）。
+3. 自动沉淀占位可扩展为加载动画占位（当前为静态"生成中…"文本实例）。
 
 ## 7. 颗粒度对齐核对
 

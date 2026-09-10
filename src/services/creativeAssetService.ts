@@ -341,3 +341,29 @@ export function assetLabelMap(assets: Array<{ id: string; label?: string }>): Re
   }
   return map;
 }
+
+// 找到 caret 之前活跃的 @提及输入起点（@[part...] 未完成），无活跃输入返回 null。
+export function findActiveMentionTrigger(value: string, caret: number): number | null {
+  for (let index = caret - 1; index >= 0; index -= 1) {
+    const char = value[index];
+    if (char === "]") return null;
+    if (char === "@") {
+      const partial = value.slice(index + 1, caret);
+      return /^[a-z0-9_\[\]]*$/.test(partial) ? index : null;
+    }
+    if (!/[a-zA-Z0-9_\[]/.test(char)) return null;
+  }
+  return null;
+}
+
+// 在活跃起点处插入完整的 @[label] 标记，替换已输入的部分，返回新文本与光标位置。
+export function buildMentionInsertion(
+  value: string,
+  caret: number,
+  triggerStart: number,
+  label: string
+): { text: string; caret: number } {
+  const token = `@[${label}]`;
+  const text = value.slice(0, triggerStart) + token + value.slice(caret);
+  return { text, caret: triggerStart + token.length };
+}

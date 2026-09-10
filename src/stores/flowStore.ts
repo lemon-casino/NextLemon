@@ -1398,6 +1398,11 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
       },
     });
 
+    const { startAutoSinkPlaceholder, completeAutoSinkPlaceholder, failAutoSinkPlaceholder } =
+      await import("@/services/creativeAutoSink");
+
+    startAutoSinkPlaceholder(nodeId);
+
     try {
       const result = await engine.executeFromNode(
         nodeId,
@@ -1415,8 +1420,14 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
         const errorCount = Object.keys(result.errors).length;
         toast.error(`部分工作流执行完成，${errorCount} 个节点失败`);
       }
+      if (result.status === "completed") {
+        completeAutoSinkPlaceholder(nodeId, get().nodes.find((n) => n.id === nodeId));
+      } else {
+        failAutoSinkPlaceholder(nodeId);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "执行失败";
+      failAutoSinkPlaceholder(nodeId);
       toast.error(`工作流执行失败: ${errorMessage}`);
     } finally {
       unsubscribe();
