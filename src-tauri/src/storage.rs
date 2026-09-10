@@ -476,3 +476,114 @@ fn calculate_dir_size(path: &PathBuf) -> u64 {
 
     size
 }
+
+// 通用媒体文件信息（视频/音频等创作素材文件）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MediaFileInfo {
+    pub id: String,
+    pub filename: String,
+    pub path: String,
+    pub size: u64,
+    pub created_at: i64,
+}
+
+// 获取媒体文件目录
+fn get_media_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data = get_app_data_dir(app)?;
+    let media_dir = app_data.join("media");
+    if !media_dir.exists() {
+        fs::create_dir_all(&media_dir).map_err(|e| format!("创建媒体目录失败: {}", e))?;
+    }
+    Ok(media_dir)
+}
+
+// 保存通用媒体文件（从 base64，保留扩展名）
+#[tauri::command]
+pub fn save_media_file(
+    app: tauri::AppHandle,
+    base64_data: String,
+    file_extension: String,
+) -> Result<MediaFileInfo, String> {
+    let media_dir = get_media_dir(&app)?;
+
+    let data = general_purpose::STANDARD
+        .decode(&base64_data)
+        .map_err(|e| format!("Base64 解码失败: {}", e))?;
+
+    // 只保留字母数字，防止路径注入
+    let safe_ext: String = file_extension
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    let ext = if safe_ext.is_empty() {
+        "bin".to_string()
+    } else {
+        safe_ext.to_lowercase()
+    };
+
+    let id = Uuid::new_v4().to_string();
+    let timestamp = chrono::Utc::now().timestamp();
+    let filename = format!("{}_{}.{}", id, timestamp, ext);
+    let file_path = media_dir.join(&filename);
+
+    fs::write(&file_path, &data).map_err(|e| format!("写入文件失败: {}", e))?;
+
+    Ok(MediaFileInfo {
+        id,
+        filename,
+        path: file_path
+            .to_str()
+            .ok_or("路径转换失败")?
+            .to_string(),
+        size: data.len() as u64,
+        created_at: timestamp,
+    })
+}
+
+// 列出媒体目录中的文件（用于孤儿文件清理）
+#[tauri::command]
+pub fn list_media_files(app: tauri::AppHandle) -> Result<Vec<MediaFileInfo>, String> {
+    let media_dir = get_media_dir(&app)?;
+    let mut files = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&media_dir) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file() {
+                    let filename = entry.file_name().to_string_lossy().to_string();
+                    let path = entry
+                        .path()
+                        .to_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    let created_at = metadata
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    files.push(MediaFileInfo {
+                        id: filename.clone(),
+                        filename,
+                        path,
+                        size: metadata.len(),
+                        created_at,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(files)
+}
+
+// 删除媒体文件（仅允许删除媒体目录内的文件，防止误删任意路径）
+#[tauri::command]
+pub fn delete_media_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let media_dir = get_media_dir(&app)?;
+    let target = std::path::Path::new(&path);
+    if !target.starts_with(&media_dir) {
+        return Err("只允许删除媒体目录内的文件".to_string());
+    }
+    fs::remove_file(target).map_err(|e| format!("删除文件失败: {}", e))
+}

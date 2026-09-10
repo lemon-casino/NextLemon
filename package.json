@@ -7,9 +7,23 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "vitest run",
     "preview": "vite preview",
     "tauri": "tauri",
-    "version": "node ./scripts/sync-version.mjs"
+    "release:web": "node ./scripts/package-web-release.mjs",
+    "version": "node ./scripts/sync-version.mjs",
+    "verify:agentic": "node ./scripts/verify-agentic-readiness.mjs",
+    "verify:release": "node ./scripts/verify-agentic-readiness.mjs --include-build --require-muapi",
+    "verify:release:local": "node ./scripts/verify-agentic-readiness.mjs --include-build --allow-blocked",
+    "verify:muapi": "node ./scripts/verify-muapi.mjs",
+    "verify:muapi:env": "node ./scripts/check-muapi-env.mjs",
+    "verify:muapi:assert-real": "node ./scripts/assert-muapi-real-report.mjs",
+    "verify:muapi:mock": "node ./scripts/verify-muapi-mock.mjs",
+    "verify:mcp": "node ./scripts/verify-local-mcp.mjs",
+    "verify:local-bridge": "node ./scripts/verify-local-agent-bridge.mjs",
+    "verify:brand:templates": "node ./scripts/verify-brand-templates.mjs",
+    "mcp:local": "node ./scripts/nextlemon-mcp-stdio.mjs",
+    "brand:spec": "node ./scripts/export-brand-spec.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.32.0",
@@ -18,10 +32,10 @@
     "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-fs": "^2.4.4",
     "@tauri-apps/plugin-http": "^2",
-    "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-notification": "^2",
-    "@tauri-apps/plugin-window-state": "^2",
+    "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-store": "^2.4.1",
+    "@tauri-apps/plugin-window-state": "^2",
     "@xyflow/react": "^12.10.0",
     "daisyui": "^5.5.8",
     "lucide-react": "^0.556.0",
@@ -40,7 +54,8 @@
     "@types/uuid": "^11.0.0",
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.9"
   },
   "volta": {
     "node": "20.19.2"
