@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 参考项目克隆（仅吸收设计，非运行时依赖）
+Open-AI-Design-Agent/
+infinite-canvas/
+
+# 发布产物与验收报告（由 verify / release 脚本生成）
+releases/
+
+# 本地 MCP 审批收件箱
+agent-inbox/
