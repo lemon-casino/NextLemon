@@ -184,6 +184,44 @@ export function formatFileSize(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${units[i]}`;
 }
 
+// 通用媒体文件信息（视频/音频等创作素材文件）
+export interface MediaFileInfo {
+  id: string;
+  filename: string;
+  path: string;
+  size: number;
+  created_at: number;
+}
+
+/**
+ * 保存通用媒体文件（视频/音频等）到应用数据 media 目录
+ * @param base64Data - 文件的 base64 数据（不含 data:xxx;base64, 前缀）
+ * @param fileExtension - 文件扩展名（如 mp4、mp3），只保留字母数字
+ */
+export async function saveMediaFile(
+  base64Data: string,
+  fileExtension: string
+): Promise<MediaFileInfo> {
+  return await invoke<MediaFileInfo>("save_media_file", {
+    base64Data,
+    fileExtension,
+  });
+}
+
+/**
+ * 列出媒体目录中的文件（用于孤儿文件清理）
+ */
+export async function listMediaFiles(): Promise<MediaFileInfo[]> {
+  return await invoke<MediaFileInfo[]>("list_media_files");
+}
+
+/**
+ * 删除媒体文件（仅允许删除媒体目录内的文件）
+ */
+export async function deleteMediaFile(path: string): Promise<void> {
+  await invoke("delete_media_file", { path });
+}
+
 /**
  * 检查是否在 Tauri 环境中运行
  * @returns 是否在 Tauri 环境中
