@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -53,5 +54,10 @@ export default defineConfig(async () => ({
         rewrite: (path) => path.replace(/^\/api_proxy_lemon/, ""),
       },
     },
+  },
+
+  // Vitest：单测只收集 src，e2e 由 Playwright 单独运行
+  test: {
+    include: ["src/**/*.{test,spec}.{ts,tsx,js}"],
   },
 }));

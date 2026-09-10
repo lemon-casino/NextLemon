@@ -17,7 +17,12 @@ export function WorkspaceModeSwitch() {
   const setMode = useWorkspaceStore((state) => state.setMode);
 
   return (
-    <div className="fixed top-6 right-6 z-[80] flex items-center gap-1 rounded-full border border-base-200/60 bg-base-100/75 p-1 shadow-lg backdrop-blur-md">
+    <div
+      className={`fixed top-6 z-[80] flex items-center gap-1 rounded-full border border-base-200/60 bg-base-100/75 p-1 shadow-lg backdrop-blur-md ${
+        // 创作模式右侧面板头部（画布助手等切换按钮）与浮窗同区，左移避让
+        mode === "creative" ? "right-[22rem]" : "right-6"
+      }`}
+    >
       {modeOptions.map((option) => {
         const Icon = option.icon;
         const active = mode === option.mode;

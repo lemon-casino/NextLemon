@@ -23,7 +23,8 @@
     "verify:local-bridge": "node ./scripts/verify-local-agent-bridge.mjs",
     "verify:brand:templates": "node ./scripts/verify-brand-templates.mjs",
     "mcp:local": "node ./scripts/nextlemon-mcp-stdio.mjs",
-    "brand:spec": "node ./scripts/export-brand-spec.mjs"
+    "brand:spec": "node ./scripts/export-brand-spec.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@google/genai": "^1.32.0",
@@ -48,6 +49,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

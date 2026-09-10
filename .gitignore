@@ -32,3 +32,7 @@ releases/
 
 # 本地 MCP 审批收件箱
 agent-inbox/
+
+# Playwright 产物
+test-results/
+playwright-report/
