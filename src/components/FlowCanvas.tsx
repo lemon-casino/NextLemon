@@ -26,12 +26,17 @@ import {
   Scissors,
   LayoutGrid,
   Play,
+  FolderPlus,
 } from "lucide-react";
 
 import { useFlowStore } from "@/stores/flowStore";
+import { useCreativeStore } from "@/stores/creativeStore";
+import { toast } from "@/stores/toastStore";
 import { nodeTypes } from "@/components/nodes";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/ContextMenu";
+import { createCreativeAssetDraftsFromWorkflowNode } from "@/services/workflowAssetService";
 import type { CustomNodeData } from "@/types";
+import { CREATIVE_ASSET_DRAG_TYPE } from "@/types/creative";
 
 // 定义自定义节点类型
 type CustomNode = Node<CustomNodeData>;
@@ -87,6 +92,18 @@ export function FlowCanvas() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   // 裁剪模式状态
   const [trimMode, setTrimMode] = useState(false);
+
+  const saveNodeAsCreativeAsset = useCallback((node: CustomNode) => {
+    const drafts = createCreativeAssetDraftsFromWorkflowNode(node);
+    if (drafts.length === 0) {
+      toast.error("此节点暂无可保存为素材的内容");
+      return;
+    }
+
+    const store = useCreativeStore.getState();
+    drafts.forEach((draft) => store.addAsset(draft));
+    toast.success(drafts.length === 1 ? "已保存到素材库" : `已保存 ${drafts.length} 个素材到素材库`);
+  }, []);
 
   // 键盘快捷键
   useEffect(() => {
@@ -206,6 +223,46 @@ export function FlowCanvas() {
         x: event.clientX,
         y: event.clientY,
       });
+
+      // 检查是否是创作素材拖放
+      const creativeAssetStr = event.dataTransfer.getData(CREATIVE_ASSET_DRAG_TYPE);
+      if (creativeAssetStr) {
+        try {
+          const { assetId } = JSON.parse(creativeAssetStr) as { assetId?: string };
+          const asset = useCreativeStore.getState().assets.find((item) => item.id === assetId);
+          if (!asset) {
+            toast.error("素材不存在或已被删除");
+            return;
+          }
+
+          if (asset.kind === "text") {
+            addNode("promptNode", position, {
+              label: asset.title || "素材文本",
+              prompt: asset.text || "",
+            } as CustomNodeData);
+          } else if (asset.kind === "image") {
+            addNode("imageInputNode", position, {
+              label: asset.title || "素材图片",
+              fileName: asset.fileName || asset.title,
+              imagePath: asset.storagePath,
+              imageData: asset.dataUrl ? dataUrlToBase64(asset.dataUrl) : undefined,
+            } as CustomNodeData);
+          } else {
+            addNode("fileUploadNode", position, {
+              label: asset.title || "素材文件",
+              fileName: asset.fileName || asset.title,
+              mimeType: asset.mimeType || (asset.kind === "video" ? "video/mp4" : "audio/mpeg"),
+              fileData: asset.dataUrl ? dataUrlToBase64(asset.dataUrl) : undefined,
+              fileSize: asset.bytes,
+            } as CustomNodeData);
+          }
+
+          toast.success("素材已加入工作流画布");
+        } catch {
+          toast.error("素材拖放数据无效");
+        }
+        return;
+      }
 
       // 检查是否是外部图片文件拖拽
       const files = event.dataTransfer.files;
@@ -422,6 +479,16 @@ export function FlowCanvas() {
             }
           },
         },
+        {
+          id: "save-creative-asset",
+          label: "保存为素材",
+          icon: <FolderPlus className="w-4 h-4" />,
+          onClick: () => {
+            if (targetNode) {
+              saveNodeAsCreativeAsset(targetNode);
+            }
+          },
+        },
       ];
 
       // 多选时显示对齐选项
@@ -573,6 +640,7 @@ export function FlowCanvas() {
     canRedo,
     undo,
     redo,
+    saveNodeAsCreativeAsset,
   ]);
 
   const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().indexOf("MAC") >= 0;
@@ -677,4 +745,10 @@ export function FlowCanvas() {
       )}
     </div>
   );
+}
+
+function dataUrlToBase64(dataUrl: string) {
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) return undefined;
+  return dataUrl.slice(commaIndex + 1);
 }

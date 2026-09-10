@@ -4,11 +4,15 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { Toolbar } from "@/components/Toolbar";
 import { FlowCanvas } from "@/components/FlowCanvas";
 import { Sidebar } from "@/components/Sidebar";
+import { LocalAgentBridgeRuntime } from "@/components/agent/LocalAgentBridgeRuntime";
+import { CreativeWorkspace } from "@/components/creative/CreativeWorkspace";
 import { SettingsPanel } from "@/components/panels";
 import { ToastContainer } from "@/components/ui/Toast";
+import { WorkspaceModeSwitch } from "@/components/workspace/WorkspaceModeSwitch";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useFlowStore } from "@/stores/flowStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 import "@/index.css";
 
@@ -17,6 +21,7 @@ function App() {
   const { nodes, edges, setNodes, setEdges } = useFlowStore();
   const theme = useSettingsStore((state) => state.settings.theme);
   const { isSettingsOpen, settingsTab, openHelp, closeHelp } = useSettingsStore();
+  const workspaceMode = useWorkspaceStore((state) => state.mode);
   const isHelpOpen = isSettingsOpen && settingsTab === "shortcuts";
 
   // 用于追踪是否正在切换画布，避免循环更新
@@ -145,23 +150,32 @@ function App() {
   return (
     <ReactFlowProvider>
       <div className="flex flex-col h-screen w-screen overflow-hidden">
-        {/* 顶部工具栏 */}
-        <Toolbar />
+        <WorkspaceModeSwitch />
 
-        {/* 主体内容 */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* 左侧导航栏（包含画布列表和节点库） */}
-          <Sidebar onDragStart={onDragStart} />
+        {workspaceMode === "workflow" ? (
+          <>
+            {/* 顶部工具栏 */}
+            <Toolbar />
 
-          {/* 右侧画布区域 */}
-          <FlowCanvas />
-        </div>
+            {/* 主体内容 */}
+            <div className="flex flex-1 overflow-hidden">
+              {/* 左侧导航栏（包含画布列表和节点库） */}
+              <Sidebar onDragStart={onDragStart} />
+
+              {/* 右侧画布区域 */}
+              <FlowCanvas />
+            </div>
+          </>
+        ) : (
+          <CreativeWorkspace />
+        )}
 
         {/* 设置面板 */}
         <SettingsPanel />
 
         {/* Toast 通知容器 */}
         <ToastContainer />
+        <LocalAgentBridgeRuntime />
       </div>
     </ReactFlowProvider>
   );

@@ -15,7 +15,9 @@ import {
   Eye,
   User,
   Settings,
+  Images,
 } from "lucide-react";
+import { CreativeAssetLibrary } from "@/components/creative/CreativeAssetLibrary";
 import { useCanvasStore, type SidebarView } from "@/stores/canvasStore";
 import { useUserPromptStore, type UserPrompt } from "@/stores/userPromptStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -30,6 +32,7 @@ const navItems: { id: SidebarView; icon: React.ComponentType<{ className?: strin
   { id: "canvases", icon: LayoutGrid, label: "画布" },
   { id: "nodes", icon: Blocks, label: "节点" },
   { id: "prompts", icon: BookText, label: "提示词" },
+  { id: "assets", icon: Images, label: "素材" },
 ];
 
 interface SidebarProps {
@@ -568,6 +571,29 @@ export function Sidebar({ onDragStart }: SidebarProps) {
                     </div>
                   )
                 })}
+              </div>
+            </>
+          )}
+
+          {/* 素材视图 */}
+          {sidebarView === "assets" && (
+            <>
+              <div className="p-4 border-b border-base-content/5 bg-base-100/30">
+                <h3 className="font-semibold text-lg tracking-tight">素材库</h3>
+                <p className="mt-1 text-xs text-base-content/45">生成历史和可复用输入素材</p>
+              </div>
+
+              <CreativeAssetLibrary
+                className="min-h-0 flex-1"
+                compact
+                showAddToCanvas={false}
+                emptyDescription="在创作画布上传，或从工作流节点右键保存为素材。"
+              />
+
+              <div className="p-3 border-t border-base-content/5 text-center bg-base-100/30">
+                <p className="text-xs text-base-content/40">
+                  拖拽素材到工作流画布可生成输入节点
+                </p>
               </div>
             </>
           )}
