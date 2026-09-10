@@ -260,3 +260,84 @@ export function findAssetIdByRef(
   const byLabel = assets.find((asset) => asset.label && asset.label === trimmed);
   return byLabel?.id ?? null;
 }
+
+const ASSET_MENTION_PATTERN = /@\[(asset_\d+)\]/g;
+
+// @提及引用：文本中可用 @[asset_N] 内嵌引用素材（infinite-canvas canvas-resource-references）。
+export function extractAssetMentions(text: string): string[] {
+  const mentions: string[] = [];
+  for (const match of text.matchAll(ASSET_MENTION_PATTERN)) {
+    if (!mentions.includes(match[1])) mentions.push(match[1]);
+  }
+  return mentions;
+}
+
+// 解析文本中的提及：返回无法解析（素材库中不存在）的标签列表，空数组表示全部有效。
+export function findUnresolvedAssetMentions(
+  text: string,
+  assets: Array<{ label?: string }>
+): string[] {
+  const labels = new Set(assets.map((asset) => asset.label).filter(Boolean));
+  return extractAssetMentions(text).filter((label) => !labels.has(label));
+}
+
+export interface UpstreamAssetRef {
+  nodeId: string;
+  assetId: string;
+  label?: string;
+}
+
+// 从工作流连线拓扑推导某节点的上游素材引用（沿入边反向遍历，
+// 收集携带 assetId 的节点数据字段），供提示词注入 @提及。
+export function deriveUpstreamAssetRefs(
+  nodeId: string,
+  nodes: Array<{ id: string; data?: Record<string, unknown> }>,
+  edges: Array<{ source: string; target: string }>,
+  labelByAssetId: Record<string, string> = {}
+): UpstreamAssetRef[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const incoming = new Map<string, string[]>();
+  for (const edge of edges) {
+    incoming.set(edge.target, [...(incoming.get(edge.target) || []), edge.source]);
+  }
+
+  const refs: UpstreamAssetRef[] = [];
+  const seen = new Set<string>();
+  const visit = (current: string) => {
+    if (seen.has(current)) return;
+    seen.add(current);
+    for (const parent of incoming.get(current) || []) {
+      const parentNode = nodeById.get(parent);
+      const assetId = findAssetIdInRecord(parentNode?.data);
+      if (assetId) {
+        refs.push({ nodeId: parent, assetId, label: labelByAssetId[assetId] });
+      }
+      visit(parent);
+    }
+  };
+  visit(nodeId);
+  return refs;
+}
+
+function findAssetIdInRecord(value: unknown, depth = 0): string | null {
+  if (!value || typeof value !== "object" || depth > 3) return null;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if ((key === "assetId" || key === "asset_id") && typeof child === "string" && child.trim()) {
+      return child;
+    }
+    if (child && typeof child === "object") {
+      const nested = findAssetIdInRecord(child, depth + 1);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+// assetId -> asset_N 标签映射，供规划器与快照构建使用
+export function assetLabelMap(assets: Array<{ id: string; label?: string }>): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const asset of assets) {
+    if (asset.label) map[asset.id] = asset.label;
+  }
+  return map;
+}

@@ -348,6 +348,7 @@ PR 11 当前边界：
 
 增强批次已落地：
 
+- @提及引用 + 吸附参考线 + 小地图：`creativeAssetService` 新增 `extractAssetMentions` / `findUnresolvedAssetMentions`（@[asset_N] 解析与校验）、`deriveUpstreamAssetRefs`（沿工作流入边反向遍历收集上游素材引用，带环守卫）与 `assetLabelMap`；Agent 工具循环创建文本素材时未解析提及直接拒绝并把错误回填模型修正，系统提示词说明提及语法；工作区快照每个工作流节点附带 `upstreamAssetLabels`；设计计划提示词按品牌 Logo/参考图自动注入 `@[asset_N]` 引用段。创作画布拖拽新增 `computeSnapAdjustment` 三边吸附（阈值 6px）与红色对齐参考线渲染；新增 `CreativeCanvasMinimap` 小地图组件（`computeMinimapFrame` 取景：可见实例 ∪ 视口，实例缩略、视口指示框、点击居中跳转）。
 - 同步墓碑机制 + 画布体验件：`CreativeTombstone` 在 creativeStore（removeAssets 连带其画布实例、removeItems、clearCanvas）与 brandKitStore（deleteBrandKit，空列表兜底新建的默认套件不记墓碑）删除时记录并持久化；项目包导出/导入合并墓碑；`applyTombstones` 按 "deletedAt > updatedAt 即删除、删除后更新则复活" 裁决合并结果；`syncProjectPackage` 把合并后的墓碑写回两个 Store，删除操作从此可跨端传播。创作画布新增 Shift+拖拽框选（`findItemsInRect` 相交命中、支持反向拖拽与追加选择）与 PNG/JPG 导出（`computeCreativeCanvasExportBounds` 外包边界 + 离屏 canvas 重绘：图片走原始字节转 dataUrl 防跨域污染、文本逐字换行、视频/音频占位卡片，长边上限 4096，Tauri 保存对话框 / 浏览器下载）。
 - asset_label 规范寻址 + ask_user 人机回路 + 事件游标断点续传：`CreativeAsset.label` 由 `nextAssetLabel` 自动分配（asset_N 递增），工作区快照携带 label，`findAssetIdByRef` 让 `asset.update` / `canvas.addAssetItem` 工具同时接受真实 ID 或规范标签，工具循环系统提示词引导模型优先引用标签；`agentToolLoop` 新增 `ask_user` 人机回路工具——模型提问即挂起并把 `pendingAskUser` 写入会话元数据，Agent 面板渲染问题卡片与编号选项，用户回答（点选项或直接输入）作为 tool 结果回填后自动续跑，会话元数据持久化使重启后问题仍在；`muApiEventStream` 纯函数状态机实现 `?since=` 游标断点续传、按 event id 去重（seenEventIds 上限 500）、6 分钟死空看门狗，`pollMuApiJobEvents` 断点续拉并回写会话元数据，chat 发送返回初始游标，切换到挂着远端 job 的会话自动静默续拉一次，RemoteJobCard 新增"同步"按钮。
 - 媒体文件存储与孤儿文件 GC：Rust 端 `storage.rs` 新增 `save_media_file`（base64 写入 app_data/media/，扩展名过滤为字母数字防路径注入）、`list_media_files`、`delete_media_file`（删除限定在 media 目录内）三个命令并注册；`fileStorageService` 暴露对应封装；创作画布上传视频/音频在 Tauri 环境改为写本地文件（storagePath + 剥离 dataUrl），图片管线不变；`creativeAssetService.collectOrphanCreativeFiles` 纯函数按"未被任何素材 storagePath 引用"判定孤儿，`cleanupOrphanCreativeFiles` 运行时清理 media/ 与 images/creative-canvas/ 两个创作素材专属目录（不触碰工作流画布图片）；素材库面板新增"清理未引用文件"按钮并报告清理数量与释放空间。
@@ -450,12 +451,14 @@ PR 12 当前边界：
 | 同步墓碑机制（合并同步闭环） | `CreativeTombstone`（id/kind/deletedAt）在 creativeStore 与 brandKitStore 删除时记录（上限 500 条）并持久化；项目包导出/导入携带墓碑；`mergeProjectPackages` 合并墓碑后按 "deletedAt > updatedAt 即删除" 裁决素材、画布实例与品牌套件，删除后更新（晚于墓碑）则实体复活，删除操作从此可跨端传播 |
 | infinite-canvas / Open-AI-Design-Agent：创作画布导出图片 | `creativeCanvasGeometry.computeCreativeCanvasExportBounds` 纯函数计算可见实例外包边界 + `creativeCanvasExport` 离屏 canvas 重绘（图片读原始字节转 dataUrl 防跨域污染、文本换行绘制、视频/音频占位卡片），支持 PNG/JPG 导出，长边上限 4096 |
 | infinite-canvas：框选多选 | `creativeCanvasGeometry.findItemsInRect` 相交命中（支持反向拖拽），Shift+左键拖空白框选，支持在现有选择集上追加，画布实时渲染选框 |
+| infinite-canvas：@提及引用 | `@[asset_N]` 内嵌语法：`extractAssetMentions`/`findUnresolvedAssetMentions` 解析与校验，`asset.create` 文本中未解析提及直接拒绝（模型自我修正），`deriveUpstreamAssetRefs` 沿连线拓扑推导节点上游素材并在快照中输出 `upstreamAssetLabels`，设计计划提示词自动注入品牌 Logo/参考图的可引用标签 |
+| infinite-canvas：吸附参考线 + 小地图 | `computeSnapAdjustment` 纯函数（左/中/右、上/中/下三边对齐吸附，阈值 6px）+ 拖拽实时红色参考线；`computeMinimapFrame` 取景纯函数 + `CreativeCanvasMinimap` 组件（实例缩略、视口指示框、点击居中跳转） |
 
 仍未吸收、留作后续增强的设计（按建议优先级排序）：
 
-1. @提及引用（`@[asset_N]` 文本内嵌引用与连线拓扑推导上游资源）（infinite-canvas canvas-resource-references；规范标签寻址已落地，文本内嵌语法未做）。
-2. Agent 执行占位（loader 节点预判落位）（Open-AI-Design-Agent）。
-3. 画布体验件余项：小地图、吸附参考线（框选与图片导出已落地）。
+1. Agent 执行占位（loader 节点预判落位）：NextLemon 的生成发生在工作流画布而非创作画布，结果不自动落画布，占位节点缺少落点语义；若后续实现"生成结果自动沉淀为创作画布实例"，可一并落地（Open-AI-Design-Agent）。
+2. @提及输入 UI（提示词编辑器内的 @ 弹出素材选择列表）；`@[asset_N]` 解析、校验与拓扑推导服务已落地。
+3. 画布体验件余项：吸附对齐支持按间距等分吸附（当前仅边/中线）。
 
 ## 7. 颗粒度对齐核对
 

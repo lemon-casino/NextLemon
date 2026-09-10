@@ -36,6 +36,8 @@
 - 项目包面板导入 readiness 报告后，会展开 MuAPI 阻塞原因、失败环境项、真实证据 blocker、下一步命令和 strict evidence 计数。
 - 项目包面板和本地 MCP 报告摘要会展开 `brand-spec` 颗粒度，包括品牌规范分数、当前模板 capability、必需工作流节点、全局模板目录 ready 数、15 个模板变体和目录 workflow node 覆盖；导入 readiness 报告时也会展开 `brand-templates` 颗粒度，包括 5 个模板、模板 ID、ready 模板 ID、必需类型、类型计数、每模板变体 ID、每模板节点/交付物、5 个 ready 模板、能力矩阵节点覆盖和失败模板清单；同时展开 `local-bridge` 颗粒度，包括 6 个应用内桥工具、15 个 `CanvasAgentOp`、5 个 ready 品牌模板、15 个模板变体、品牌只读工具和唯一写工具 `nextlemon.requestApproval`；还会展开 `local-mcp` 颗粒度，包括 11 个 MCP 工具、15 个操作 schema、15 个操作类型、分类计数、审批工具 `oneOf` 数、传输格式、审批文件 hash、安全审批策略和严格发布 blocker。
 
+- 新增 @提及引用：提示词/文本素材可用 `@[asset_N]` 引用素材，Agent 工具调用中未解析提及会被拒绝并回填错误供模型自我修正；工作流快照按连线拓扑输出每个节点的上游可引用素材标签；设计计划提示词自动注入品牌素材引用。
+- 创作画布新增吸附参考线与小地图：拖拽时按其他素材的边/中线自动吸附（阈值 6px）并渲染对齐线；左下角小地图展示实例缩略与视口框，点击居中跳转。
 - 新增同步墓碑机制：素材、画布实例与品牌套件删除时记录 `CreativeTombstone`（上限 500 条）并进入项目包/WebDAV 合并，按 "删除时间晚于实体更新时间即删除" 裁决，删除操作可跨端传播；删除后又有更新的实体自动复活。
 - 创作画布新增框选与图片导出：Shift+拖拽框选多选（支持反向拖拽与追加选择）；一键导出 PNG/JPG（可见素材外包边界重绘，长边上限 4096，桌面端走保存对话框）。
 - 新增 asset_label 规范寻址：素材自动分配 `asset_N` 规范标签并注入 Agent 工作区快照，工具调用支持按标签引用素材（`findAssetIdByRef`），模型无需再处理内部 UUID。
@@ -93,7 +95,7 @@ npm run verify:muapi:assert-real -- --json --report releases\muapi-real-verifica
 - 桌面安装包：当前发布物是 Web zip；Tauri 桌面安装包仍依赖本机 Rust/Cargo 环境完成打包。
 - UI 自动化：已有单元测试和构建验证，但素材画布、Agent 面板、品牌模板面板仍需要 Playwright 级别 smoke/e2e 覆盖。
 - 同步真实环境：WebDAV 基础服务已实现，仍需要真实 WebDAV 服务、多端同步和冲突处理验收。
-- 参考项目设计未吸收项：@提及引用、Agent 执行占位、画布小地图/吸附参考线，已在方案文档 6.2 节列为后续增强路线。
+- 参考项目设计未吸收项：Agent 执行占位（依赖生成结果自动落画布）、@提及输入 UI（解析服务已落地）、等间距吸附，已在方案文档 6.2 节列为后续增强路线。
 - 桌面端 Rust 命令：本轮新增的 `save_media_file` / `list_media_files` / `delete_media_file` 需要在具备 Rust/Cargo 环境的机器上执行 `npm run tauri build` 打包桌面安装包后生效；Web 包不受影响（媒体入库逻辑有环境守卫）。
 
 ## 通过标准

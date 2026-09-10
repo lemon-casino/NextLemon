@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   computeCreativeCanvasExportBounds,
+  computeMinimapFrame,
+  computeSnapAdjustment,
   findItemsInRect,
 } from "@/services/creativeCanvasGeometry";
 import type { CreativeCanvasItem } from "@/types/creative";
@@ -50,5 +52,51 @@ describe("creativeCanvasGeometry", () => {
     ]);
     expect(bounds).toEqual({ x: -48, y: -48, width: 196, height: 176 });
     expect(computeCreativeCanvasExportBounds([])).toBeNull();
+  });
+  it("snaps dragged edges onto nearby alignment lines", () => {
+    const others = [item("anchor", 300, 300)];
+    // 目标左边缘 304，与 anchor 左边缘 300 相差 4（阈值 6）→ 吸附
+    const snapped = computeSnapAdjustment(
+      { id: "drag", width: 100, height: 80 },
+      { x: 304, y: 304 },
+      others
+    );
+    expect(snapped.x).toBe(300);
+    expect(snapped.y).toBe(300);
+    expect(snapped.guides).toEqual([
+      { orientation: "vertical", at: 300 },
+      { orientation: "horizontal", at: 300 },
+    ]);
+  });
+
+  it("leaves positions unchanged when nothing is within threshold", () => {
+    const others = [item("anchor", 300, 300)];
+    // 拖拽左边缘 420，距 anchor 右边缘 400 为 20，超出阈值
+    const result = computeSnapAdjustment(
+      { id: "drag", width: 100, height: 80 },
+      { x: 420, y: 420 },
+      others
+    );
+    expect(result.x).toBe(420);
+    expect(result.y).toBe(420);
+    expect(result.guides).toEqual([]);
+  });
+
+  it("computes minimap frame from visible items unioned with the viewport", () => {
+    const items = [item("a", 0, 0, 100, 100), item("gone", 9000, 9000, 50, 50, true)];
+    const frame = computeMinimapFrame(
+      items,
+      { x: -200, y: -100, zoom: 2 },
+      800,
+      600,
+      168,
+      112
+    );
+    // 视口世界范围 x:[100,500] y:[50,350]，实例 [0,100]^2 并入后 x:[0,500] y:[0,350]
+    expect(frame.union.x).toBe(0);
+    expect(frame.union.y).toBe(0);
+    expect(frame.union.width).toBeCloseTo(500);
+    expect(frame.union.height).toBeCloseTo(350);
+    expect(frame.scale).toBeCloseTo(Math.min(152 / 500, 96 / 350));
   });
 });

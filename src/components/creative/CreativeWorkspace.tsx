@@ -22,6 +22,7 @@ import {
   Upload,
 } from "lucide-react";
 import { exportCreativeCanvasImage } from "@/services/creativeCanvasExport";
+import { CreativeCanvasMinimap } from "@/components/creative/CreativeCanvasMinimap";
 import { findItemsInRect } from "@/services/creativeCanvasGeometry";
 import { AgentPanel } from "@/components/agent/AgentPanel";
 import { BrandKitPanel } from "@/components/creative/BrandKitPanel";
@@ -41,7 +42,8 @@ import type {
   CreativeCanvasItem,
   CreativeViewport,
 } from "@/types/creative";
-import type { CreativeCanvasRect } from "@/services/creativeCanvasGeometry";
+import type { CreativeCanvasRect, SnapGuide } from "@/services/creativeCanvasGeometry";
+import { computeSnapAdjustment } from "@/services/creativeCanvasGeometry";
 import { CREATIVE_ASSET_DRAG_TYPE } from "@/types/creative";
 
 type DragState =
@@ -420,6 +422,7 @@ function CreativeCanvasSurface({
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const [marqueeRect, setMarqueeRect] = useState<CreativeCanvasRect | null>(null);
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const canvas = useCreativeStore((state) => state.canvas);
   const assets = useCreativeStore((state) => state.assets);
   const selectedItemIds = useCreativeStore((state) => state.selectedItemIds);
@@ -474,10 +477,18 @@ function CreativeCanvasSurface({
       }
 
       if (state.type === "move") {
-        moveItem(state.itemId, {
+        const raw = {
           x: state.startPosition.x + (event.clientX - state.startClientX) / state.zoom,
           y: state.startPosition.y + (event.clientY - state.startClientY) / state.zoom,
-        });
+        };
+        const dragItem = canvas.items.find((item) => item.id === state.itemId);
+        if (dragItem) {
+          const snapped = computeSnapAdjustment(dragItem, raw, canvas.items);
+          moveItem(state.itemId, { x: snapped.x, y: snapped.y });
+          setSnapGuides(snapped.guides);
+        } else {
+          moveItem(state.itemId, raw);
+        }
         return;
       }
 
@@ -504,6 +515,7 @@ function CreativeCanvasSurface({
         }
       }
       setMarqueeRect(null);
+      setSnapGuides([]);
       dragStateRef.current = null;
       document.body.style.cursor = "default";
     };
@@ -637,6 +649,17 @@ function CreativeCanvasSurface({
           transform: `translate(${canvas.viewport.x}px, ${canvas.viewport.y}px) scale(${canvas.viewport.zoom})`,
         }}
       >
+        {snapGuides.map((guide, index) => (
+          <div
+            key={`guide-${index}`}
+            className="pointer-events-none absolute bg-error/70"
+            style={
+              guide.orientation === "vertical"
+                ? { left: guide.at - 0.5, top: -100000, width: 1, height: 200000 }
+                : { top: guide.at - 0.5, left: -100000, height: 1, width: 200000 }
+            }
+          />
+        ))}
         {marqueeRect && (
           <div
             className="pointer-events-none absolute border-2 border-primary bg-primary/10"
@@ -698,6 +721,7 @@ function CreativeCanvasSurface({
       <div className="pointer-events-none absolute bottom-4 right-4 rounded-full border border-base-300 bg-base-100/80 px-3 py-1 text-xs text-base-content/60 shadow-sm backdrop-blur">
         {Math.round(canvas.viewport.zoom * 100)}%
       </div>
+      {canvas.items.length > 0 && <CreativeCanvasMinimap containerRef={containerRef} />}
     </div>
   );
 }

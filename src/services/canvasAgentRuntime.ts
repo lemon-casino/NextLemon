@@ -3,7 +3,12 @@ import { v4 as uuidv4 } from "uuid";
 import { nodeCategories } from "@/config/nodeConfig";
 import { agentOpLabel, validateAgentOp } from "@/services/agentOps";
 import { captureRollbackSnapshot } from "@/services/agentRollback";
-import { computeNextToSourcePosition, findAssetIdByRef } from "@/services/creativeAssetService";
+import {
+  computeNextToSourcePosition,
+  deriveUpstreamAssetRefs,
+  findAssetIdByRef,
+  findUnresolvedAssetMentions,
+} from "@/services/creativeAssetService";
 import {
   createCreativeAssetDraftsFromWorkflowNode,
   getDefaultWorkflowNodeData,
@@ -121,6 +126,10 @@ export function getWorkspaceSnapshot() {
   const canvasState = useCanvasStore.getState();
   const flowState = useFlowStore.getState();
   const creativeState = useCreativeStore.getState();
+  const labelByAssetId: Record<string, string> = {};
+  for (const asset of creativeState.assets) {
+    if (asset.label) labelByAssetId[asset.id] = asset.label;
+  }
 
   return {
     workspace: {
@@ -140,6 +149,14 @@ export function getWorkspaceSnapshot() {
         label: typeof node.data.label === "string" ? node.data.label : node.type,
         position: node.position,
         dataKeys: Object.keys(node.data || {}),
+        upstreamAssetLabels: deriveUpstreamAssetRefs(
+          node.id,
+          flowState.nodes,
+          flowState.edges,
+          labelByAssetId
+        )
+          .map((ref) => ref.label)
+          .filter((label): label is string => Boolean(label)),
       })),
       edges: flowState.edges.map((edge) => ({
         id: edge.id,
@@ -364,6 +381,15 @@ function createOpsFromToolCall(
       };
 
       if (kind === "text" && !asset.text?.trim()) return { ok: false, error: "文本素材缺少 text" };
+      if (kind === "text" && asset.text) {
+        const unresolved = findUnresolvedAssetMentions(asset.text, useCreativeStore.getState().assets);
+        if (unresolved.length > 0) {
+          return {
+            ok: false,
+            error: `提及的素材不存在: ${unresolved.map((label) => "@[" + label + "]").join("、")}（只能引用快照中的 label）`,
+          };
+        }
+      }
       if (kind !== "text" && !asset.dataUrl && !asset.storagePath) {
         return { ok: false, error: "媒体素材缺少 dataUrl 或 storagePath" };
       }

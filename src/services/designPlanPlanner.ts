@@ -21,6 +21,8 @@ interface PlanBlueprint {
 export interface CreateDesignPlanOptions {
   brandKit?: BrandKit | null;
   template?: DesignTemplate | null;
+  // assetId -> asset_N 规范标签，用于在生成提示词中注入 @[asset_N] 素材引用
+  assetLabels?: Record<string, string>;
 }
 
 const NODE_GAP_X = 360;
@@ -54,6 +56,7 @@ export function createDesignPlanFromBrief(brief: string, options: CreateDesignPl
       pageCountRange: blueprint.pageCountRange,
       brandKitId: options.brandKit?.id,
       brandKit: options.brandKit ? createBrandKitSummary(options.brandKit) : undefined,
+      assetLabels: options.assetLabels,
       templateId: options.template?.id,
       template: options.template ? createDesignTemplateSummary(options.template) : undefined,
     },
@@ -571,6 +574,22 @@ function buildPromptFromPlan(plan: DesignPlan): string {
       ...template.recommendedWorkflowNodes.map((item) => `  - ${item.label} / ${item.nodeType}：${item.purpose}`),
       template.acceptanceCriteria.length > 0 ? "- 验收标准：" : "",
       ...template.acceptanceCriteria.map((item) => `  - ${item}`)
+    );
+  }
+
+  const assetLabels = (plan.metadata?.assetLabels || {}) as Record<string, string>;
+  const brandAssetIds = brandKit
+    ? [brandKit.logoAssetId, ...brandKit.referenceAssetIds].filter(
+        (id): id is string => Boolean(id && assetLabels[id])
+      )
+    : [];
+  if (brandAssetIds.length > 0) {
+    promptSections.push(
+      "",
+      "可用素材引用（在提示词中用 @[asset_N] 语法引用）：",
+      ...brandAssetIds.map(
+        (assetId) => `- @[${assetLabels[assetId]}]`
+      )
     );
   }
 

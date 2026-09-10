@@ -39,6 +39,7 @@ import {
 } from "@/services/agentToolLoop";
 import { pollMuApiJobEvents } from "@/services/muApiAgentAdapter";
 import { shouldResumeMuApiEventPolling } from "@/services/muApiEventStream";
+import { assetLabelMap } from "@/services/creativeAssetService";
 import {
   createDesignPlanFromBrief,
   designPlanToCanvasAgentOps,
@@ -57,6 +58,7 @@ import {
 } from "@/services/muApiAgentAdapter";
 import { useAgentStore } from "@/stores/agentStore";
 import { useBrandKitStore } from "@/stores/brandKitStore";
+import { useCreativeStore } from "@/stores/creativeStore";
 import { toast } from "@/stores/toastStore";
 import type {
   AgentApprovalAuditMetadata,
@@ -85,6 +87,7 @@ export function AgentPanel() {
   const setProviderConfig = useAgentStore((state) => state.setProviderConfig);
   const lastRollback = useAgentStore((state) => state.lastRollback);
   const brandKits = useBrandKitStore((state) => state.brandKits);
+  const creativeAssets = useCreativeStore((state) => state.assets);
   const activeBrandKitId = useBrandKitStore((state) => state.activeBrandKitId);
   const [selectedProviderKind, setSelectedProviderKind] = useState<AgentProviderKind>("local");
   const [input, setInput] = useState("");
@@ -353,7 +356,10 @@ export function AgentPanel() {
   };
 
   const createLocalDesignPlan = (sessionId: string, brief: string) => {
-    const plan = createDesignPlanFromBrief(brief, { brandKit: activeBrandKit });
+    const plan = createDesignPlanFromBrief(brief, {
+      brandKit: activeBrandKit,
+      assetLabels: assetLabelMap(creativeAssets),
+    });
     updateActivePlan(sessionId, plan);
     appendEvent(sessionId, {
       id: crypto.randomUUID(),
