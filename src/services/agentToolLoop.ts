@@ -70,6 +70,7 @@ export const AGENT_SYSTEM_PROMPT = [
   "在文本素材或提示词中引用素材时使用 @[asset_N] 语法，例如：请参考 @[asset_2] 的风格；节点快照中的 upstreamAssetLabels 列出了该节点可引用的上游素材。",
   "如果用户的需求不明确或缺少必要信息，调用 ask_user 工具向用户提问，可提供编号选项。",
   "参数必须符合每个工具的 JSON Schema；校验失败时请根据错误信息修正后重试。",
+  "当用户想一次性搭好「提示词 → 图片生成」流程时，优先调用组合工具 generate_image_flow，而不是逐个拆成多个工具调用。",
   "写操作不会直接执行，会进入用户审批队列；请向用户说明你发起了哪些操作。",
   "全程使用中文与用户交流，回复保持简洁。",
 ].join("\n");
@@ -233,6 +234,39 @@ export function getAgentChatTools(): Array<{
     {
       type: "function",
       function: {
+        name: "generate_image_flow",
+        description:
+          "组合工具：一次调用搭好完整图片生成流。内部编排受控操作：创建提示词素材→创建提示词节点与生成节点→连线→触发生成节点运行。所有写操作仍需用户审批。",
+        parameters: {
+          type: "object",
+          properties: {
+            prompt: { type: "string", description: "图片生成提示词" },
+            title: { type: "string", description: "提示词素材/节点标题；省略时从 prompt 截取" },
+            referenceAssetIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "可选参考素材，使用快照中的 label（如 asset_2），会以 @[asset_N] 提及注入提示词",
+            },
+            generatorNodeType: {
+              type: "string",
+              enum: ["imageGeneratorProNode", "imageGeneratorFastNode"],
+              description: "生成节点类型，默认 imageGeneratorProNode",
+            },
+            position: {
+              type: "object",
+              properties: { x: { type: "number" }, y: { type: "number" } },
+              required: ["x", "y"],
+              description: "提示词节点画布坐标；生成节点自动放在其右侧",
+            },
+          },
+          required: ["prompt"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
         name: "ask_user",
         description: "当用户需求不明确或缺少必要信息时，向用户提问并暂停执行；用户下一条消息就是回答。可提供编号选项。",
         parameters: {
@@ -253,14 +287,19 @@ export function getAgentChatTools(): Array<{
   ];
 }
 
+// 未配置 API Key 时的中止提示：绝不回退到任何内置密钥。
+export const AGENT_MISSING_API_KEY_MESSAGE =
+  "未配置模型 API Key，本轮工具调用已中止。请在 Agent 面板的模型设置中填写 API Key 后重试。";
+
 export function resolveAgentModelConfig(config: AgentProviderConfig): AgentModelConfig | null {
   const loopEnabled = config.metadata?.modelToolLoop === true;
   if (!loopEnabled) return null;
 
   const baseUrl = (config.baseUrl || LEMON_API_CONFIG.baseUrl).replace(/\/+$/, "");
-  const apiKey = config.apiKey || LEMON_API_CONFIG.apiKey;
+  // 安全要求：用户未配置密钥时保留空值，由 runAgentToolLoop 中止本轮并提示，绝不使用内置密钥。
+  const apiKey = (config.apiKey || "").trim();
   const model = config.model || "gpt-4o-mini";
-  if (!baseUrl || !apiKey) return null;
+  if (!baseUrl) return null;
   return { baseUrl, apiKey, model };
 }
 
@@ -303,6 +342,9 @@ export async function callAgentChat(
   options: { toolChoice?: "required" | "auto"; fetchImpl?: typeof fetch; signal?: AbortSignal } = {}
 ): Promise<AgentChatCompletionResult> {
   const fetchImpl = options.fetchImpl || fetch;
+  if (!config.apiKey.trim()) {
+    throw new Error(AGENT_MISSING_API_KEY_MESSAGE);
+  }
   const response = await fetchImpl(`${config.baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: {
@@ -346,6 +388,18 @@ export async function runAgentToolLoop(
 ): Promise<AgentToolLoopTurnResult> {
   const executeTool = options.executeTool || runCanvasAgentTool;
   const maxRounds = options.maxRounds || MAX_LOOP_ROUNDS;
+
+  // 安全闸门：没有可用密钥时中止本轮工具调用，不发任何模型请求。
+  if (!config.apiKey.trim()) {
+    useAgentStore.getState().addMessage(sessionId, "assistant", AGENT_MISSING_API_KEY_MESSAGE);
+    return {
+      ok: false,
+      rounds: 0,
+      toolCallCount: 0,
+      awaitingApproval: false,
+      error: AGENT_MISSING_API_KEY_MESSAGE,
+    };
+  }
 
   const state = loopStates.get(sessionId) || { messages: [], iterations: 0 };
   if (state.messages.length === 0) {

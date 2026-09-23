@@ -2,12 +2,13 @@ import { useCallback, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useFlowStore } from "@/stores/flowStore";
 import { useCanvasStore } from "@/stores/canvasStore";
-import { generateText, validateJsonOutput } from "@/services/llmService";
+import { generateText } from "@/services/llmService";
 import { editImage } from "@/services/imageService";
 import { saveImage, isTauriEnvironment } from "@/services/fileStorageService";
 import { generateThumbnail } from "@/utils/imageCompression";
 import type { PPTContentNodeData, PPTOutline, PPTPageItem, ConnectedImageInfo } from "./types";
 import { buildSystemPrompt, buildPageImagePrompt, getVisualStylePrompt, PPT_OUTLINE_JSON_SCHEMA, DEFAULT_OUTLINE_MODEL, DEFAULT_IMAGE_MODEL } from "./types";
+import { createPageItemsFromOutline, mapWithConcurrency, parseOutlineContent, PPT_PAGE_MAX_PARALLEL } from "./executionCore";
 
 interface UsePPTContentExecutionProps {
   nodeId: string;
@@ -168,47 +169,22 @@ export function usePPTContentExecution({
           return;
         }
 
-        // 使用结构化输出后，返回的内容应该是有效的 JSON，但仍然验证以确保安全
-        let outline: PPTOutline;
-        try {
-          outline = JSON.parse(response.content) as PPTOutline;
-        } catch {
-          // 如果解析失败，尝试使用原有的验证逻辑
-          const validation = validateJsonOutput(response.content);
-          if (!validation.valid || !validation.data) {
-            update({
-              outlineStatus: "error",
-              outlineError: validation.error || "JSON 解析失败",
-            });
-            return;
-          }
-          outline = validation.data as PPTOutline;
-        }
-
-        // 验证大纲结构
-        if (!outline.title || !Array.isArray(outline.pages) || outline.pages.length === 0) {
+        // 使用结构化输出后，返回的内容应该是有效的 JSON，但仍然验证以确保安全（共享解析逻辑）
+        const parsed = parseOutlineContent(response.content);
+        if (parsed.error || !parsed.outline) {
           update({
             outlineStatus: "error",
-            outlineError: "大纲格式不正确：缺少标题或页面",
+            outlineError: parsed.error,
           });
           return;
         }
 
         // 初始化页面列表
-        const pages: PPTPageItem[] = outline.pages.map((page, index) => ({
-          id: uuidv4(),
-          pageNumber: page.pageNumber || index + 1,
-          heading: page.heading || "",
-          points: page.points || [],
-          imageDesc: page.imageDesc,
-          script: page.script || "",
-          supplement: page.supplement,
-          status: "pending",
-        }));
+        const pages = createPageItemsFromOutline(parsed.outline);
 
         update({
           outlineStatus: "ready",
-          outline,
+          outline: parsed.outline,
           pages,
           progress: { completed: 0, total: pages.length },
         });
@@ -463,6 +439,28 @@ export function usePPTContentExecution({
     [data.pages, data.imageConfig.aspectRatio, data.imageConfig.imageSize, data.imageModel, data.visualStyleTemplate, data.customVisualStylePrompt, data.firstPageIsTitlePage, getTemplateImage, nodeId, updatePageState, getConnectedImages, getConnectedImagesWithInfo]
   );
 
+  // 从正确的画布读取最新页面列表（retryFailed 等先更新 store 再触发的场景，
+  // 闭包 data.pages 可能是重置前的旧数据，必须以 store 为准）
+  const readLatestPages = useCallback((): PPTPageItem[] => {
+    const { activeCanvasId } = useCanvasStore.getState();
+    const targetCanvasId = canvasIdRef.current;
+
+    let currentData: PPTContentNodeData | undefined;
+    if (targetCanvasId && targetCanvasId !== activeCanvasId) {
+      // 从 canvasStore 读取
+      const canvas = useCanvasStore.getState().canvases.find((c) => c.id === targetCanvasId);
+      const currentNode = canvas?.nodes.find((n) => n.id === nodeId);
+      currentData = currentNode?.data as PPTContentNodeData | undefined;
+    } else {
+      // 从 flowStore 读取（当前活跃画布）
+      const { nodes } = useFlowStore.getState();
+      const currentNode = nodes.find((n) => n.id === nodeId);
+      currentData = currentNode?.data as PPTContentNodeData | undefined;
+    }
+
+    return currentData?.pages || data.pages;
+  }, [nodeId, data.pages]);
+
   // 开始批量生成（并发执行所有待处理任务）
   const startGeneration = useCallback(async () => {
     // 记录当前画布 ID，确保结果更新到正确的画布
@@ -472,16 +470,18 @@ export function usePPTContentExecution({
     isPausedRef.current = false;
     update({ generationStatus: "running" });
 
-    // 获取所有待处理的页面
-    const pendingPages = data.pages.filter((p) => p.status === "pending");
+    // 获取所有待处理的页面（从 store 读取最新数据，避免闭包陈旧）
+    const pendingPages = readLatestPages().filter((p) => p.status === "pending");
 
     if (pendingPages.length === 0) {
       update({ generationStatus: "completed" });
       return;
     }
 
-    // 并发执行所有待处理页面的生成
-    await Promise.all(pendingPages.map((page) => generatePageImage(page.id)));
+    // 并发执行所有待处理页面的生成（信号量限流，默认并发 3，与工作流引擎保持一致）
+    await mapWithConcurrency(pendingPages, PPT_PAGE_MAX_PARALLEL, (page) =>
+      generatePageImage(page.id)
+    );
 
     // 检查最终状态（从正确的画布读取）
     const targetCanvasId = canvasIdRef.current;
@@ -517,7 +517,7 @@ export function usePPTContentExecution({
         generationStatus: hasFailed ? "error" : "completed",
       });
     }
-  }, [data.pages, generatePageImage, nodeId, update]);
+  }, [data.pages, generatePageImage, readLatestPages, update]);
 
   // 暂停/停止生成 - 硬停止：立即中断所有请求，重置所有正在运行的页面状态
   const pauseGeneration = useCallback(() => {

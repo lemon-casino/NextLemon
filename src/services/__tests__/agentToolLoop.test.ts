@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  AGENT_MISSING_API_KEY_MESSAGE,
   AGENT_SYSTEM_PROMPT,
   answerAgentAskUser,
   callAgentChat,
@@ -50,7 +51,7 @@ describe("agentToolLoop", () => {
 
   it("exposes one JSON schema per controlled tool", () => {
     const tools = getAgentChatTools();
-    expect(tools).toHaveLength(9);
+    expect(tools).toHaveLength(10);
     expect(tools.some((tool) => tool.function.name === "ask_user")).toBe(true);
     for (const tool of tools) {
       expect(tool.type).toBe("function");
@@ -60,6 +61,9 @@ describe("agentToolLoop", () => {
     }
     const create = tools.find((tool) => tool.function.name === "asset.create");
     expect((create!.function.parameters as Record<string, unknown>).required).toEqual(["kind"]);
+    const composite = tools.find((tool) => tool.function.name === "generate_image_flow");
+    expect(composite).toBeTruthy();
+    expect((composite!.function.parameters as Record<string, unknown>).required).toEqual(["prompt"]);
   });
 
   it("resolves model config only when the loop toggle is on", () => {
@@ -72,6 +76,54 @@ describe("agentToolLoop", () => {
     } as AgentProviderConfig);
     expect(resolved).not.toBeNull();
     expect(resolved!.model).toBe("gpt-4o-mini");
+  });
+
+  it("never falls back to a built-in API key", () => {
+    const resolved = resolveAgentModelConfig({
+      kind: "local",
+      enabled: true,
+      name: "Local Provider",
+      metadata: { modelToolLoop: true },
+    } as AgentProviderConfig);
+    expect(resolved).not.toBeNull();
+    expect(resolved!.apiKey).toBe("");
+
+    const configured = resolveAgentModelConfig({
+      kind: "local",
+      enabled: true,
+      name: "Local Provider",
+      apiKey: "user-key",
+      metadata: { modelToolLoop: true },
+    } as AgentProviderConfig);
+    expect(configured!.apiKey).toBe("user-key");
+  });
+
+  it("aborts the turn with a clear message when no API key is available", async () => {
+    const sessionId = useAgentStore.getState().createSession("无密钥会话", "local");
+    clearToolLoop(sessionId);
+
+    let fetchCalled = false;
+    const fetchImpl = (async () => {
+      fetchCalled = true;
+      throw new Error("不应发起模型请求");
+    }) as unknown as typeof fetch;
+
+    const result = await runAgentToolLoop(
+      sessionId,
+      "帮我生成一张海报",
+      { baseUrl: "https://llm.example.com", apiKey: "", model: "test-model" },
+      { fetchImpl, executeTool: async () => ({ ok: true }) }
+    );
+
+    expect(fetchCalled).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe(AGENT_MISSING_API_KEY_MESSAGE);
+    expect(result.toolCallCount).toBe(0);
+    expect(hasActiveToolLoop(sessionId)).toBe(false);
+
+    const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId);
+    const lastMessage = session?.messages[session.messages.length - 1];
+    expect(lastMessage?.content).toContain("API Key");
   });
 
   it("parses tool calls and plain text from a chat completion", () => {

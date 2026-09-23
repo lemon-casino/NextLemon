@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import {
   Bot,
   Check,
@@ -9,6 +10,7 @@ import {
   KeyRound,
   Link2,
   MessageCircleQuestion,
+  Pencil,
   Play,
   RefreshCw,
   Send,
@@ -37,8 +39,19 @@ import {
   resumeAgentToolLoopAfterApproval,
   runAgentToolLoop,
 } from "@/services/agentToolLoop";
-import { pollMuApiJobEvents } from "@/services/muApiAgentAdapter";
-import { shouldResumeMuApiEventPolling } from "@/services/muApiEventStream";
+import {
+  isMuApiSessionJobSettled,
+  resolveAgentApprovalResolutions,
+  shouldPollMuApiSessionJob,
+  type AgentApprovalEventResolution,
+} from "@/services/muApiEventStream";
+import {
+  getRemoteJobId,
+  getRemoteSessionId,
+  recoverMuApiSessionJobs,
+  startMuApiJobPolling,
+  syncMuApiSessionEvents,
+} from "@/services/muApiJobRecovery";
 import { assetLabelMap } from "@/services/creativeAssetService";
 import {
   createDesignPlanFromBrief,
@@ -85,7 +98,9 @@ export function AgentPanel() {
   const cancelSession = useAgentStore((state) => state.cancelSession);
   const clearSession = useAgentStore((state) => state.clearSession);
   const setProviderConfig = useAgentStore((state) => state.setProviderConfig);
-  const lastRollback = useAgentStore((state) => state.lastRollback);
+  const renameSession = useAgentStore((state) => state.renameSession);
+  const rollbackHistory = useAgentStore((state) => state.rollbackHistory);
+  const _hasHydrated = useAgentStore((state) => state._hasHydrated);
   const brandKits = useBrandKitStore((state) => state.brandKits);
   const creativeAssets = useCreativeStore((state) => state.assets);
   const activeBrandKitId = useBrandKitStore((state) => state.activeBrandKitId);
@@ -98,6 +113,8 @@ export function AgentPanel() {
   const [toolName, setToolName] = useState<CanvasAgentToolName>("workspace.readSnapshot");
   const selectedTool = CANVAS_AGENT_TOOLS.find((tool) => tool.name === toolName) || CANVAS_AGENT_TOOLS[0];
   const [toolArgs, setToolArgs] = useState(() => JSON.stringify(selectedTool.exampleArgs, null, 2));
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || null,
@@ -250,39 +267,52 @@ export function AgentPanel() {
     toast.info("Agent 会话已取消");
   };
 
-  const syncRemoteSessionEvents = async (session: AgentSession, silent = false) => {
-    try {
-      const freshSession =
-        useAgentStore.getState().sessions.find((item) => item.id === session.id) || session;
-      const result = await pollMuApiJobEvents(providerConfigs.muapi, freshSession);
-      result.newEvents.forEach((event) => appendEvent(session.id, event));
-      updateSessionMetadata(session.id, { eventPoll: result.pollState });
-      if (result.pollState.done) {
-        setSessionStatus(session.id, "idle");
-        if (!silent) toast.success("远端任务已完成");
-      } else if (result.stalled) {
-        setSessionStatus(session.id, "failed");
-        toast.error("远端任务超过 6 分钟没有新事件，已标记为停滞");
-      } else if (!silent) {
-        toast.success(`已同步 ${result.newEvents.length} 条新事件（游标：${result.pollState.cursor ?? "起点"}）`);
-      }
-      return result;
-    } catch (error) {
-      if (!silent) toast.error(error instanceof Error ? error.message : "同步远端事件失败");
-      return null;
-    }
+  const startRenameSession = (sessionId: string, currentTitle: string) => {
+    setRenamingSessionId(sessionId);
+    setRenameDraft(currentTitle);
   };
 
-  // 断线重连：切换到挂着远端 job 且未完成的会话时，自动增量续拉一次事件。
-  const resumedSessionIdsRef = useRef<Set<string>>(new Set());
+  const commitRenameSession = (sessionId: string) => {
+    if (renamingSessionId !== sessionId) return;
+    renameSession(sessionId, renameDraft);
+    setRenamingSessionId(null);
+  };
+
+  const syncRemoteSessionEvents = async (session: AgentSession, silent = false) => {
+    return syncMuApiSessionEvents(session.id, providerConfigs.muapi, { silent });
+  };
+
+  const muApiConfigured = isMuApiConfigured(providerConfigs.muapi);
+  const activeSessionIsMuApi = activeSession?.providerKind === "muapi";
+  const activeSessionJobPending = Boolean(
+    activeSession && activeSessionIsMuApi && shouldPollMuApiSessionJob(activeSession)
+  );
+
+  // MuAPI 任务持续轮询：激活的 muapi 会话挂着未完成远端 job 时，约 2 秒周期轮询
+  // 增量事件与 job 状态直到终态（done/error/cancelled）；切换会话或卸载时清理定时器。
   useEffect(() => {
-    if (!activeSession || activeSession.providerKind !== "muapi") return;
-    if (resumedSessionIdsRef.current.has(activeSession.id)) return;
-    if (!shouldResumeMuApiEventPolling(activeSession)) return;
-    resumedSessionIdsRef.current.add(activeSession.id);
-    void syncRemoteSessionEvents(activeSession, true);
+    const sessionId = activeSession?.id;
+    if (!sessionId || !activeSessionIsMuApi || !muApiConfigured || !activeSessionJobPending) return;
+
+    const polling = startMuApiJobPolling(sessionId, providerConfigs.muapi);
+    return () => polling.stop();
+    // providerConfigs.muapi 来自 zustand selector，配置变更产生新引用时重启循环以使用新配置；
+    // activeSessionJobPending 收敛为 false（终态/停滞）时触发清理并停止轮询。
+  }, [activeSession?.id, activeSessionIsMuApi, activeSessionJobPending, muApiConfigured, providerConfigs.muapi]);
+
+  // 刷新/重启恢复：应用加载或切回 muapi 会话时，向服务端查询该会话
+  // pending/processing 的任务并恢复续听，不再只依赖本地持久化的 metadata.remoteJobId。
+  const recoveredSessionIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const sessionId = activeSession?.id;
+    if (!sessionId || !activeSessionIsMuApi || !_hasHydrated || !muApiConfigured) return;
+    const remoteSessionId = activeSession ? getRemoteSessionId(activeSession) : "";
+    if (!remoteSessionId) return;
+    if (recoveredSessionIdsRef.current.has(sessionId)) return;
+    recoveredSessionIdsRef.current.add(sessionId);
+    void recoverMuApiSessionJobs(sessionId, remoteSessionId, providerConfigs.muapi);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSession?.id]);
+  }, [activeSession?.id, activeSessionIsMuApi, _hasHydrated, muApiConfigured]);
 
   const sendMuApiContent = async (session: AgentSession, content: string) => {
     if (!isMuApiConfigured(providerConfigs.muapi)) {
@@ -535,15 +565,45 @@ export function AgentPanel() {
 
       {sessions.length > 0 && (
         <div className="flex gap-2 overflow-x-auto border-b border-base-300/60 p-3">
-          {sessions.map((session) => (
-            <button
-              key={session.id}
-              className={`btn btn-xs rounded-full ${activeSessionId === session.id ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setActiveSession(session.id)}
-            >
-              {session.title}
-            </button>
-          ))}
+          {sessions.map((session) => {
+            if (renamingSessionId === session.id) {
+              return (
+                <input
+                  key={session.id}
+                  className="input input-bordered input-xs w-36 rounded-full"
+                  autoFocus
+                  value={renameDraft}
+                  aria-label="会话名称"
+                  onChange={(event) => setRenameDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") commitRenameSession(session.id);
+                    if (event.key === "Escape") setRenamingSessionId(null);
+                  }}
+                  onBlur={() => commitRenameSession(session.id)}
+                />
+              );
+            }
+            return (
+              <button
+                key={session.id}
+                className={`btn btn-xs rounded-full ${activeSessionId === session.id ? "btn-primary" : "btn-ghost"}`}
+                title={`${session.title}（双击重命名）`}
+                onClick={() => setActiveSession(session.id)}
+                onDoubleClick={() => startRenameSession(session.id, session.title)}
+              >
+                <span className="max-w-40 truncate">{session.title}</span>
+                {activeSessionId === session.id && (
+                  <Pencil
+                    className="h-3 w-3 opacity-60"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      startRenameSession(session.id, session.title);
+                    }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -568,6 +628,8 @@ export function AgentPanel() {
             {activeSession.providerKind === "muapi" && getRemoteJobId(activeSession) && (
               <RemoteJobCard
                 jobId={getRemoteJobId(activeSession)}
+                jobStatus={getRemoteJobStatus(activeSession)}
+                settled={isMuApiSessionJobSettled(activeSession)}
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onCancel={handleCancel}
@@ -604,15 +666,16 @@ export function AgentPanel() {
                 onCancel={handleCancel}
               />
             )}
-            {lastRollback && !lastRollback.undone && (
+            {rollbackHistory.length > 0 && rollbackHistory[rollbackHistory.length - 1] && (
               <RollbackCard
-                summary={lastRollback.opSummary}
-                executedAt={lastRollback.createdAt}
+                summary={rollbackHistory[rollbackHistory.length - 1].opSummary}
+                executedAt={rollbackHistory[rollbackHistory.length - 1].createdAt}
+                historyCount={rollbackHistory.length}
                 onRollback={() => {
                   if (!activeSession) return;
                   const result = rollbackLastAgentExecution(activeSession.id);
                   if (result.ok) {
-                    toast.success("已回滚上一次 Agent 执行");
+                    toast.success("已回滚最近一次 Agent 执行");
                   } else {
                     toast.error(result.error || "回滚失败");
                   }
@@ -1042,12 +1105,16 @@ function MuApiConfigForm({
 
 function RemoteJobCard({
   jobId,
+  jobStatus,
+  settled,
   onApprove,
   onReject,
   onCancel,
   onSync,
 }: {
   jobId: string;
+  jobStatus: string;
+  settled: boolean;
   onApprove: () => void | Promise<void>;
   onReject: () => void;
   onCancel: () => void;
@@ -1058,28 +1125,44 @@ function RemoteJobCard({
       <div className="flex items-start gap-2">
         <Clock3 className="mt-0.5 h-4 w-4 text-info" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">MuAPI Job</div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">MuAPI Job</span>
+            <span className={`badge badge-xs ${settled ? "badge-ghost" : "badge-info badge-outline"}`}>
+              {jobStatus || (settled ? "done" : "running")}
+            </span>
+          </div>
           <div className="mt-1 truncate text-xs text-base-content/55">{jobId}</div>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-4 gap-2">
-        <button className="btn btn-primary btn-xs gap-1" onClick={() => void onApprove()}>
-          <Check className="h-3.5 w-3.5" />
-          批准
-        </button>
-        <button className="btn btn-ghost btn-xs gap-1" onClick={onReject}>
-          <X className="h-3.5 w-3.5" />
-          拒绝
-        </button>
-        <button className="btn btn-ghost btn-xs gap-1" onClick={onCancel}>
-          <Play className="h-3.5 w-3.5 rotate-45" />
-          取消
-        </button>
-        <button className="btn btn-ghost btn-xs gap-1" onClick={() => void onSync()} title="从上次游标增量拉取事件">
-          <RefreshCw className="h-3.5 w-3.5" />
-          同步
-        </button>
-      </div>
+      {settled ? (
+        // 任务终态后收敛操作卡片：只保留手工同步入口，不再展示批准/拒绝/取消。
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-base-content/45">任务已结束，操作已收敛</span>
+          <button className="btn btn-ghost btn-xs gap-1" onClick={() => void onSync()} title="从上次游标增量拉取事件">
+            <RefreshCw className="h-3.5 w-3.5" />
+            同步
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 grid grid-cols-4 gap-2">
+          <button className="btn btn-primary btn-xs gap-1" onClick={() => void onApprove()}>
+            <Check className="h-3.5 w-3.5" />
+            批准
+          </button>
+          <button className="btn btn-ghost btn-xs gap-1" onClick={onReject}>
+            <X className="h-3.5 w-3.5" />
+            拒绝
+          </button>
+          <button className="btn btn-ghost btn-xs gap-1" onClick={onCancel}>
+            <Play className="h-3.5 w-3.5 rotate-45" />
+            取消
+          </button>
+          <button className="btn btn-ghost btn-xs gap-1" onClick={() => void onSync()} title="从上次游标增量拉取事件">
+            <RefreshCw className="h-3.5 w-3.5" />
+            同步
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1203,10 +1286,12 @@ function AskUserCard({
 function RollbackCard({
   summary,
   executedAt,
+  historyCount,
   onRollback,
 }: {
   summary: string;
   executedAt: number;
+  historyCount: number;
   onRollback: () => void;
 }) {
   return (
@@ -1219,7 +1304,7 @@ function RollbackCard({
           </div>
           <div className="mt-1 truncate text-xs text-base-content/60">{summary}</div>
           <div className="mt-1 text-[11px] text-base-content/40">
-            执行于 {new Date(executedAt).toLocaleString()} · 回滚只保留一步，且应用重启后失效
+            执行于 {new Date(executedAt).toLocaleString()} · 内存保留最近 3 步（当前 {historyCount} 步），应用重启后失效
           </div>
         </div>
         <button className="btn btn-warning btn-xs gap-1 flex-shrink-0" onClick={onRollback}>
@@ -1233,6 +1318,8 @@ function RollbackCard({
 
 function SessionTimeline({ session }: { session: AgentSession }) {
   const events = session.messages.flatMap((message) => message.events || []);
+  // 审批事件生命周期：job 终态或后续批准/拒绝事件到达后收敛历史 approval_required 卡。
+  const approvalResolutions = resolveAgentApprovalResolutions(events, isMuApiSessionJobSettled(session));
 
   return (
     <div className="space-y-2">
@@ -1244,7 +1331,11 @@ function SessionTimeline({ session }: { session: AgentSession }) {
           }`}
         >
           <div className="mb-1 text-[11px] font-semibold uppercase text-base-content/40">{message.role}</div>
-          {message.content && <div className="whitespace-pre-wrap text-sm">{message.content}</div>}
+          {message.content && (
+            <div className="text-sm">
+              <AgentMarkdownText content={message.content} />
+            </div>
+          )}
         </div>
       ))}
 
@@ -1256,7 +1347,7 @@ function SessionTimeline({ session }: { session: AgentSession }) {
           </div>
           <div className="space-y-2">
             {events.map((event) => (
-              <AgentEventRow key={event.id} event={event} />
+              <AgentEventRow key={event.id} event={event} resolution={approvalResolutions[event.id]} />
             ))}
           </div>
         </div>
@@ -1265,12 +1356,75 @@ function SessionTimeline({ session }: { session: AgentSession }) {
   );
 }
 
-function AgentEventRow({ event }: { event: AgentEvent }) {
+// Agent 聊天文本用 Markdown 渲染；skipHtml 禁用原始 HTML 注入，URL 亦经 react-markdown 默认净化。
+function AgentMarkdownText({ content }: { content: string }) {
+  return (
+    <div className="text-xs leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+      <ReactMarkdown
+        skipHtml
+        components={{
+          p: ({ children }) => <p className="my-1 first:mt-0 last:mb-0">{children}</p>,
+          a: ({ children, href }) => (
+            <a className="link link-primary" href={href} target="_blank" rel="noreferrer noopener">
+              {children}
+            </a>
+          ),
+          ul: ({ children }) => <ul className="my-1 list-inside list-disc space-y-0.5">{children}</ul>,
+          ol: ({ children }) => <ol className="my-1 list-inside list-decimal space-y-0.5">{children}</ol>,
+          h1: ({ children }) => <h1 className="mb-1 mt-2 text-sm font-bold first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-1 mt-2 text-sm font-bold first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-1 mt-2 text-xs font-bold first:mt-0">{children}</h3>,
+          blockquote: ({ children }) => (
+            <blockquote className="my-1 border-l-2 border-base-300 pl-2 text-base-content/60">{children}</blockquote>
+          ),
+          pre: ({ children }) => (
+            <pre className="my-1 overflow-x-auto rounded bg-base-100/80 p-2 font-mono text-[11px]">{children}</pre>
+          ),
+          code: ({ children, className }) =>
+            className ? (
+              <code className="font-mono text-[11px]">{children}</code>
+            ) : (
+              <code className="rounded bg-base-100/80 px-1 font-mono text-[11px]">{children}</code>
+            ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+const APPROVAL_OUTCOME_LABELS: Record<string, string> = {
+  approved: "已批准",
+  rejected: "已拒绝",
+  cancelled: "已取消",
+  completed: "已完成",
+};
+
+function AgentEventRow({ event, resolution }: { event: AgentEvent; resolution?: AgentApprovalEventResolution }) {
   if (event.type === "text") {
-    return <div className="rounded-md bg-base-200/70 p-2 text-xs">{event.content}</div>;
+    return (
+      <div className="rounded-md bg-base-200/70 p-2 text-xs">
+        <AgentMarkdownText content={event.content} />
+      </div>
+    );
   }
 
   if (event.type === "approval_required") {
+    if (resolution?.resolved) {
+      return (
+        <div className="rounded-md bg-base-200/60 p-2 text-xs text-base-content/50">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate">
+              {event.title} · {summarizeAgentOps(event.ops)}
+            </span>
+            <span className="badge badge-xs badge-ghost flex-shrink-0">
+              {APPROVAL_OUTCOME_LABELS[resolution.outcome || "completed"] || "已结束"}
+            </span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="rounded-md bg-warning/10 p-2 text-xs">
         {event.title} · {summarizeAgentOps(event.ops)}
@@ -1324,9 +1478,9 @@ function isMuApiConfigured(config: AgentProviderConfig) {
   return Boolean((config.baseUrl || "https://api.muapi.ai").trim() && config.apiKey?.trim());
 }
 
-function getRemoteJobId(session: AgentSession) {
+function getRemoteJobStatus(session: AgentSession) {
   const metadata = session.metadata || {};
-  return typeof metadata.remoteJobId === "string" ? metadata.remoteJobId : "";
+  return typeof metadata.remoteJobStatus === "string" ? metadata.remoteJobStatus : "";
 }
 
 function getSessionDesignPlan(session: AgentSession): DesignPlan | null {

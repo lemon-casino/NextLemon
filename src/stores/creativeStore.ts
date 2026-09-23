@@ -21,7 +21,7 @@ import {
 } from "@/services/creativeHistory";
 import { nextAssetLabel } from "@/services/creativeAssetService";
 import type { CreativeTombstone } from "@/types/projectPackage";
-import { tauriStorage } from "@/utils/tauriStorage";
+import { flushTauriStorage, tauriStorage } from "@/utils/tauriStorage";
 
 const DEFAULT_VIEWPORT: CreativeViewport = { x: 120, y: 120, zoom: 1 };
 const DEFAULT_ITEM_SIZE = {
@@ -383,6 +383,8 @@ export const useCreativeStore = create<CreativeStore>()(
           selectedItemIds: [],
           tombstones: recordTombstones(state.tombstones, removedItemIds, "item", now()),
         }));
+        // 清空画布属低频破坏性操作，立即落盘防抖窗口内的变更
+        void flushTauriStorage();
       },
 
       undoCanvas: () => {
@@ -418,6 +420,8 @@ export const useCreativeStore = create<CreativeStore>()(
           canUndo: false,
           canRedo: false,
         });
+        // 工作区恢复（项目包导入路径）覆盖全量状态，立即落盘防抖窗口内的变更
+        void flushTauriStorage();
       },
 
       exportSnapshot: () => {

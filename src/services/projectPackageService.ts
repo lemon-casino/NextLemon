@@ -245,18 +245,16 @@ export function getProjectPackageWarnings(projectPackage: NextLemonProjectPackag
 }
 
 // 分域清单式合并（纯函数，参考 infinite-canvas app-sync 的 mergeById）：
-// 按 id 并集、updatedAt 最新者胜。Agent 会话不参与合并（会话是本地优先数据，
-// 远端整包覆盖会破坏对话）；没有墓碑机制，删除操作无法跨端同步。
+// 实体按 id 并集、updatedAt 最新者胜；工作流画布再下沉到节点/边级合并
+// （见 mergeWorkflowCanvases）。素材/画布条目/品牌 Kit 的删除通过墓碑裁决
+// 跨端传播（applyTombstones：deletedAt 晚于实体 updatedAt 视为已删除，
+// 之后又有更新的修改则复活）。Agent 会话是本地优先数据，不参与合并
+// （远端整包覆盖会破坏对话）。
 export function mergeProjectPackages(
   local: NextLemonProjectPackage,
   incoming: NextLemonProjectPackage
 ): NextLemonProjectPackage {
-  const canvases = mergeById(
-    local.workflow.canvases,
-    incoming.workflow.canvases,
-    (canvas) => canvas.id,
-    (canvas) => canvas.updatedAt
-  );
+  const canvases = mergeWorkflowCanvases(local.workflow.canvases, incoming.workflow.canvases);
   const creativeTombstones = mergeById(
     local.creative.tombstones || [],
     incoming.creative.tombstones || [],
@@ -394,11 +392,107 @@ function mergeById<T>(
   return Array.from(byId.values());
 }
 
+// 工作流画布同步基线（模块级内存）：记录上次同步合并结果中各画布的 updatedAt。
+// 节点/边没有墓碑（CreativeTombstone 只覆盖 asset/item/brandKit），无条件的
+// 节点/边级并集会把另一端删除的节点/边复活；当某一端画布自上次同步以来
+// updatedAt 未变（未编辑）时，合并回退为整画布覆盖（较新端整体胜出），
+// 保住"单端编辑、另一端静止"场景的删除传播。
+// 已知局限：应用重启后基线丢失，首轮同步安全降级为并集（删除可能复活一次）；
+// 两端同时编辑同一画布时的删除仍会复活，彻底解决需要画布内墓碑
+// （需扩展包 schema 与 flowStore 删除钩子，超出本文件范围）。
+const workflowSyncBaseline = new Map<string, number>();
+
+// 工作流画布合并：画布按 id 并集、updatedAt 最新者胜；两端共有的画布再下沉到
+// 节点/边级合并（两端同时编辑同一画布时，节点级修改不再被整画布覆盖）。
+// 单端独有的画布原样保留。getSyncBaseline 可注入（便于单测），生产路径读
+// workflowSyncBaseline。
+export function mergeWorkflowCanvases(
+  localCanvases: ProjectPackageCanvas[],
+  incomingCanvases: ProjectPackageCanvas[],
+  getSyncBaseline: (canvasId: string) => number | undefined = (canvasId) =>
+    workflowSyncBaseline.get(canvasId)
+): ProjectPackageCanvas[] {
+  const localCanvasById = new Map(localCanvases.map((canvas) => [canvas.id, canvas]));
+  const incomingCanvasById = new Map(incomingCanvases.map((canvas) => [canvas.id, canvas]));
+  return mergeById(
+    localCanvases,
+    incomingCanvases,
+    (canvas) => canvas.id,
+    (canvas) => canvas.updatedAt
+  ).map((canvas) => {
+    const localCanvas = localCanvasById.get(canvas.id);
+    const incomingCanvas = incomingCanvasById.get(canvas.id);
+    if (!localCanvas || !incomingCanvas) return canvas;
+    // 较旧一端自上次同步以来未编辑：节点/边并集会把另一端删除的节点/边复活，
+    // 回退为整画布覆盖（较新端整体胜出）以传播删除
+    const olderUpdatedAt = Math.min(localCanvas.updatedAt, incomingCanvas.updatedAt);
+    const baseline = getSyncBaseline(canvas.id);
+    if (baseline !== undefined && olderUpdatedAt <= baseline) {
+      const newerCanvas =
+        localCanvas.updatedAt >= incomingCanvas.updatedAt ? localCanvas : incomingCanvas;
+      return {
+        ...newerCanvas,
+        updatedAt: Math.max(localCanvas.updatedAt, incomingCanvas.updatedAt),
+      };
+    }
+    return mergeCanvasNodesAndEdges(localCanvas, incomingCanvas);
+  });
+}
+
+// 节点/边级合并：节点/边本身没有 updatedAt，同一 id 的冲突以所在画布
+// updatedAt 新者为准，其余按 id 并集保留；合并后丢弃端点缺失的悬挂边。
+// 利用 mergeById“前者优先、后者仅在 updatedAt 更大时覆盖”的特性：
+// 把新画布放前面、时间戳取常量 0，即得到“新画布赢下同 id 冲突”的并集。
+function mergeCanvasNodesAndEdges(
+  localCanvas: ProjectPackageCanvas,
+  incomingCanvas: ProjectPackageCanvas
+): ProjectPackageCanvas {
+  const [newerCanvas, olderCanvas] =
+    localCanvas.updatedAt >= incomingCanvas.updatedAt
+      ? [localCanvas, incomingCanvas]
+      : [incomingCanvas, localCanvas];
+  const nodes = mergeById(newerCanvas.nodes, olderCanvas.nodes, (node) => node.id, () => 0);
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = mergeById(newerCanvas.edges, olderCanvas.edges, (edge) => edge.id, () => 0).filter(
+    (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)
+  );
+  return {
+    ...newerCanvas,
+    nodes,
+    edges,
+    updatedAt: Math.max(localCanvas.updatedAt, incomingCanvas.updatedAt),
+  };
+}
+
+// 同步专用包构造：与 createProjectPackage 一致，但活动画布保留 canvasStore 中的
+// 真实 updatedAt。createProjectPackage 会把活动画布 updatedAt 刷新为导出时间，
+// 那会让"静止端"在同步基线判定中永远表现为"已编辑"，破坏单端删除的整画布回退。
+// 活动画布 nodes/edges 仍取 flow 实时值；updatedAt 取 canvasStore 中的值
+// （App.tsx 会在 flow 编辑后 300ms 内把节点/边与 updatedAt 写回 canvasStore）。
+function createProjectPackageForSync(): NextLemonProjectPackage {
+  const pkg = createProjectPackage();
+  const storedActiveCanvas = useCanvasStore
+    .getState()
+    .canvases.find((canvas) => canvas.id === pkg.workflow.activeCanvasId);
+  if (!storedActiveCanvas) return pkg;
+  return {
+    ...pkg,
+    workflow: {
+      ...pkg.workflow,
+      canvases: pkg.workflow.canvases.map((canvas) =>
+        canvas.id === storedActiveCanvas.id
+          ? { ...canvas, updatedAt: storedActiveCanvas.updatedAt }
+          : canvas
+      ),
+    },
+  };
+}
+
 // WebDAV 拉取同步：本地全量 + 远端全量 -> 按 id/updatedAt 合并 -> 直接应用合并结果。
 // 与 importProjectPackage 的"冲突改名追加"不同，合并后同 id 实体不会产生重复副本。
 export function syncProjectPackage(remote: NextLemonProjectPackage): { warnings: string[] } {
   const warnings = getProjectPackageWarnings(remote);
-  const local = createProjectPackage();
+  const local = createProjectPackageForSync();
   const merged = mergeProjectPackages(local, remote);
 
   const canvasStore = useCanvasStore.getState();
@@ -436,6 +530,12 @@ export function syncProjectPackage(remote: NextLemonProjectPackage): { warnings:
     activeBrandKitId: merged.brand.activeBrandKitId,
     tombstones: merged.brand.tombstones || [],
   });
+
+  // 记录工作流画布同步基线：本轮合并结果作为下一轮"该画布是否被编辑过"的对照，
+  // 供 mergeWorkflowCanvases 在单端静止时回退整画布覆盖、传播节点/边删除
+  merged.workflow.canvases.forEach((canvas) =>
+    workflowSyncBaseline.set(canvas.id, canvas.updatedAt)
+  );
 
   return { warnings };
 }

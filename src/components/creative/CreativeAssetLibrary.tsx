@@ -32,6 +32,7 @@ import {
   type CreativeAsset,
   type CreativeAssetKind,
 } from "@/types/creative";
+import { useResilientMedia, type MediaKind } from "@/utils/mediaLoadStrategy";
 
 type AssetKindFilter = CreativeAssetKind | "all";
 type AssetSourceFilter = CreativeAsset["source"] | "all";
@@ -388,8 +389,18 @@ function IconButton({
 }
 
 function AssetThumbnail({ asset, previewUrl }: { asset: CreativeAsset; previewUrl: string }) {
-  if (asset.kind === "image" && previewUrl) {
-    return <img src={previewUrl} alt={asset.title} className="h-full w-full object-cover" />;
+  const media = useResilientMedia(previewUrl, "image");
+  if (asset.kind === "image" && previewUrl && !media.failed) {
+    return (
+      <img
+        key={media.stage}
+        src={media.src}
+        crossOrigin={media.crossOrigin}
+        alt={asset.title}
+        className="h-full w-full object-cover"
+        onError={media.onMediaError}
+      />
+    );
   }
 
   const Icon = asset.kind === "video" ? FileVideo : asset.kind === "audio" ? FileAudio : asset.kind === "text" ? Type : Images;
@@ -511,6 +522,10 @@ function CreativeAssetPreviewModal({
 }
 
 function AssetPreviewBody({ asset, previewUrl }: { asset: CreativeAsset; previewUrl: string }) {
+  const mediaKind: MediaKind =
+    asset.kind === "video" ? "video" : asset.kind === "audio" ? "audio" : "image";
+  const media = useResilientMedia(previewUrl, mediaKind);
+
   if (asset.kind === "text") {
     return (
       <pre className="min-h-full whitespace-pre-wrap break-words rounded-lg bg-base-100 p-4 text-sm leading-6 text-base-content">
@@ -519,18 +534,45 @@ function AssetPreviewBody({ asset, previewUrl }: { asset: CreativeAsset; preview
     );
   }
 
-  if (asset.kind === "image" && previewUrl) {
-    return <img src={previewUrl} alt={asset.title} className="mx-auto max-h-[64vh] max-w-full rounded-md object-contain" />;
+  if (asset.kind === "image" && previewUrl && !media.failed) {
+    return (
+      <img
+        key={media.stage}
+        src={media.src}
+        crossOrigin={media.crossOrigin}
+        alt={asset.title}
+        className="mx-auto max-h-[64vh] max-w-full rounded-md object-contain"
+        onError={media.onMediaError}
+      />
+    );
   }
 
-  if (asset.kind === "video" && previewUrl) {
-    return <video src={previewUrl} className="h-full max-h-[64vh] w-full rounded-md bg-black object-contain" controls />;
+  if (asset.kind === "video" && previewUrl && !media.failed) {
+    return (
+      <video
+        key={media.stage}
+        src={media.src}
+        crossOrigin={media.crossOrigin}
+        className="h-full max-h-[64vh] w-full rounded-md bg-black object-contain"
+        controls
+        onError={media.onMediaError}
+        onCanPlay={media.onMediaReady}
+      />
+    );
   }
 
-  if (asset.kind === "audio" && previewUrl) {
+  if (asset.kind === "audio" && previewUrl && !media.failed) {
     return (
       <div className="flex min-h-[320px] items-center justify-center">
-        <audio src={previewUrl} controls className="w-full max-w-xl" />
+        <audio
+          key={media.stage}
+          src={media.src}
+          crossOrigin={media.crossOrigin}
+          controls
+          className="w-full max-w-xl"
+          onError={media.onMediaError}
+          onCanPlay={media.onMediaReady}
+        />
       </div>
     );
   }
@@ -538,7 +580,7 @@ function AssetPreviewBody({ asset, previewUrl }: { asset: CreativeAsset; preview
   return (
     <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 text-base-content/40">
       <Images className="h-8 w-8" />
-      <span className="text-sm">素材预览缺失</span>
+      <span className="text-sm">{previewUrl && media.failed ? "素材加载失败" : "素材预览缺失"}</span>
     </div>
   );
 }

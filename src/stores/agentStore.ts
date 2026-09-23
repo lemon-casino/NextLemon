@@ -24,11 +24,14 @@ interface AgentStore {
   sessions: AgentSession[];
   activeSessionId: string | null;
   _hasHydrated: boolean;
-  // 最近一次 Agent 审批执行的回滚快照，仅存内存，重启后失效。
+  // 最近 Agent 审批执行的回滚快照环形历史，最多保留 3 步；仅存内存，重启后失效。
+  rollbackHistory: AgentRollbackSnapshot[];
+  // 兼容视图：最近一次快照（即 rollbackHistory 末尾），canvasAgentRuntime 仍读取该字段。
   lastRollback: AgentRollbackSnapshot | null;
 
   setProviderConfig: (kind: AgentProviderKind, patch: Partial<AgentProviderConfig>) => void;
   createSession: (title?: string, providerKind?: AgentProviderKind) => string;
+  renameSession: (sessionId: string, title: string) => void;
   upsertSession: (session: AgentSession) => void;
   updateSession: (sessionId: string, patch: Partial<AgentSession>) => void;
   updateSessionMetadata: (sessionId: string, metadata: Record<string, unknown>) => void;
@@ -50,6 +53,8 @@ interface AgentStore {
   clearSession: (sessionId: string) => void;
   getActiveSession: () => AgentSession | null;
 }
+
+const ROLLBACK_HISTORY_LIMIT = 3;
 
 const DEFAULT_PROVIDER_CONFIGS: Record<AgentProviderKind, AgentProviderConfig> = {
   local: {
@@ -115,6 +120,7 @@ export const useAgentStore = create<AgentStore>()(
       sessions: [],
       activeSessionId: null,
       _hasHydrated: false,
+      rollbackHistory: [],
       lastRollback: null,
 
       setProviderConfig: (kind, patch) => {
@@ -148,6 +154,12 @@ export const useAgentStore = create<AgentStore>()(
         }));
 
         return session.id;
+      },
+
+      renameSession: (sessionId, title) => {
+        const nextTitle = title.trim();
+        if (!nextTitle) return;
+        get().updateSession(sessionId, { title: nextTitle });
       },
 
       upsertSession: (session) => {
@@ -226,15 +238,24 @@ export const useAgentStore = create<AgentStore>()(
       },
 
       recordRollbackSnapshot: (snapshot) => {
-        set({ lastRollback: snapshot });
+        set((state) => {
+          const history = [...state.rollbackHistory, snapshot].slice(-ROLLBACK_HISTORY_LIMIT);
+          return {
+            rollbackHistory: history,
+            lastRollback: history[history.length - 1] ?? null,
+          };
+        });
       },
 
+      // 回滚完成后弹出最近一次快照，环形历史退回到上一步。
       markRollbackUndone: () => {
-        set((state) => ({
-          lastRollback: state.lastRollback
-            ? { ...state.lastRollback, undone: true }
-            : null,
-        }));
+        set((state) => {
+          const history = state.rollbackHistory.slice(0, -1);
+          return {
+            rollbackHistory: history,
+            lastRollback: history[history.length - 1] ?? null,
+          };
+        });
       },
 
       requestApproval: (sessionId, title, ops, audit) => {

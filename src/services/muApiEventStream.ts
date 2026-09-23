@@ -1,6 +1,8 @@
 // MuAPI 事件流游标状态机（纯函数，参考 Open-AI-Design-Agent 的事件轮询设计）：
 // ?since= 游标断点续传 + 按 event id 去重 + 死空看门狗（超过 dead-air 时限无新事件判 stalled）。
 
+import type { AgentEvent } from "@/types/agent";
+
 export interface MuApiEventPollState {
   cursor: string | null;
   lastEventAt: number;
@@ -82,14 +84,92 @@ export function isMuApiEventPollStalled(
   return now - state.lastEventAt > maxDeadAirMs;
 }
 
-// 断点续传判定：会话挂着一个远端 job，且尚未完成。
-export function shouldResumeMuApiEventPolling(session: {
-  status?: string;
+// 断点续传判定已由 shouldPollMuApiSessionJob 取代（后者不依赖本地 session.status，
+// 且同时覆盖持续轮询与停滞停轮），为避免两者判定不一致造成误用，旧函数已删除。
+
+// job 终态集合：done/error/cancelled（含服务端常见的 completed/failed/canceled 别名）。
+export const MUAPI_JOB_TERMINAL_STATUSES = [
+  "done",
+  "completed",
+  "error",
+  "failed",
+  "cancelled",
+  "canceled",
+] as const;
+
+export function isMuApiJobStatusTerminal(status: unknown): boolean {
+  if (typeof status !== "string") return false;
+  return (MUAPI_JOB_TERMINAL_STATUSES as readonly string[]).includes(status.trim().toLowerCase());
+}
+
+// 会话上的远端任务是否已收敛：事件流标记 done，或最近一次 job 状态为终态。
+export function isMuApiSessionJobSettled(session: {
+  metadata?: Record<string, unknown>;
+}): boolean {
+  const poll = session.metadata?.eventPoll as MuApiEventPollState | undefined;
+  if (poll?.done) return true;
+  return isMuApiJobStatusTerminal(session.metadata?.remoteJobStatus);
+}
+
+// 持续轮询判定：会话挂着远端 job、尚未收敛、且未进入死空停滞。
+export function shouldPollMuApiSessionJob(session: {
   metadata?: Record<string, unknown>;
 }): boolean {
   const remoteJobId = session.metadata?.remoteJobId;
   if (typeof remoteJobId !== "string" || !remoteJobId) return false;
+  if (isMuApiSessionJobSettled(session)) return false;
   const poll = session.metadata?.eventPoll as MuApiEventPollState | undefined;
-  if (poll?.done) return false;
-  return session.status === "running" || session.status === "awaiting_approval";
+  return poll ? !isMuApiEventPollStalled(poll) : true;
+}
+
+export type AgentApprovalOutcome = "approved" | "rejected" | "cancelled" | "completed";
+
+export interface AgentApprovalEventResolution {
+  resolved: boolean;
+  outcome: AgentApprovalOutcome | null;
+}
+
+// 审批 resolved 证据：后续到达的批准/拒绝/取消类 tool_result 事件。
+const APPROVAL_OUTCOME_BY_TOOL: Record<string, AgentApprovalOutcome> = {
+  "approval.approve": "approved",
+  "approval.execute": "approved",
+  "muapi.approve": "approved",
+  "approval.reject": "rejected",
+  "muapi.reject": "rejected",
+  "muapi.cancel": "cancelled",
+};
+
+// 审批卡生命周期收敛：approval_required 事件在后续 resolved 证据（批准/拒绝/取消的
+// tool_result，或任务整体终态 jobSettled）到达后收敛，不再静态悬挂。
+export function resolveAgentApprovalResolutions(
+  events: AgentEvent[],
+  jobSettled = false
+): Record<string, AgentApprovalEventResolution> {
+  const resolutions: Record<string, AgentApprovalEventResolution> = {};
+  let pendingEventIds: string[] = [];
+
+  for (const event of events) {
+    if (event.type === "approval_required") {
+      pendingEventIds.push(event.id);
+      continue;
+    }
+    if (pendingEventIds.length === 0 || event.type !== "tool_result") continue;
+    const outcome = APPROVAL_OUTCOME_BY_TOOL[event.toolName];
+    if (!outcome) continue;
+    // 拒绝/取消类结果在生产中即以 ok=false 落盘（如 agentStore.rejectPendingOps 硬编码
+    // approval.reject 的 ok=false），同样视为 resolved 证据；其余失败结果不算收敛。
+    if (!event.ok && outcome !== "rejected" && outcome !== "cancelled") continue;
+    for (const eventId of pendingEventIds) {
+      resolutions[eventId] = { resolved: true, outcome };
+    }
+    pendingEventIds = [];
+  }
+
+  if (jobSettled) {
+    for (const eventId of pendingEventIds) {
+      resolutions[eventId] = { resolved: true, outcome: "completed" };
+    }
+  }
+
+  return resolutions;
 }

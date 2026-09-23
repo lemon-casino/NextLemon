@@ -85,7 +85,7 @@ function renderSimpleMarkdown(text: string): React.ReactNode {
 export function PageItemRow({
   item,
   onRetry,
-  onSkip: _onSkip, // 保留接口但暂不使用
+  onSkip,
   onRun,
   onStop,
   onUploadImage,
@@ -96,9 +96,6 @@ export function PageItemRow({
   const [showPreview, setShowPreview] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // 保留 _onSkip 以避免 lint 警告
-  void _onSkip;
 
   // 获取显示的图片（优先使用手动上传，然后是生成的图片）
   const displayImage = item.manualImage || item.result?.image;
@@ -250,16 +247,27 @@ export function PageItemRow({
             ) : (
               <>
                 {item.status === "pending" && (
-                  <button
-                    className="btn btn-ghost btn-sm btn-square"
-                    onClick={() => onRun(item.id)}
-                    disabled={disabled}
-                    title="开始生成"
-                  >
-                    <Play className="w-4 h-4" />
-                  </button>
+                  <>
+                    <button
+                      className="btn btn-ghost btn-sm btn-square"
+                      onClick={() => onRun(item.id)}
+                      disabled={disabled}
+                      title="开始生成"
+                    >
+                      <Play className="w-4 h-4" />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm btn-square"
+                      onClick={() => onSkip(item.id)}
+                      disabled={disabled}
+                      title="跳过此页"
+                    >
+                      <SkipForward className="w-4 h-4" />
+                    </button>
+                  </>
                 )}
-                {(item.status === "completed" || item.status === "failed") && (
+                {/* 已跳过的页面可通过重新生成恢复为待生成并重新参与批量生成 */}
+                {(item.status === "completed" || item.status === "failed" || item.status === "skipped") && (
                   <button
                     className="btn btn-ghost btn-sm btn-square"
                     onClick={() => onRetry(item.id)}

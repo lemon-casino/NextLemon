@@ -46,6 +46,7 @@ import type {
 } from "@/types/creative";
 import type { CreativeCanvasRect, SnapGuide } from "@/services/creativeCanvasGeometry";
 import { computeSnapAdjustment } from "@/services/creativeCanvasGeometry";
+import { useResilientMedia, type MediaKind } from "@/utils/mediaLoadStrategy";
 import { CREATIVE_ASSET_DRAG_TYPE } from "@/types/creative";
 
 type DragState =
@@ -247,8 +248,20 @@ export function CreativeWorkspace() {
     }
   }, [canvas.items.length, clearCanvas]);
 
+  // 鼠标点击过的按钮主动失焦：Chromium/WebView2 下点击按钮后焦点滞留按钮上，
+  // 会命中空格处理的排除名单导致无法进入平移模式。键盘聚焦（detail === 0）不
+  // 受影响，保留按钮的空格激活能力。
+  const handleRootClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.detail === 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    target?.closest("button")?.blur();
+  }, []);
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-base-200">
+    <div
+      className="flex h-screen w-screen overflow-hidden bg-base-200"
+      onClickCapture={handleRootClickCapture}
+    >
       <input
         ref={fileInputRef}
         type="file"
@@ -435,6 +448,11 @@ function CreativeCanvasSurface({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<DragState | null>(null);
+  // 指针移动/视口更新按 rAF 合帧：同一帧内的多次 pointermove 只应用最后一次坐标
+  const frameRef = useRef<number | null>(null);
+  const pendingMoveRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  // 按住空格进入平移模式（不改变选区）
+  const spacePanRef = useRef(false);
   const [marqueeRect, setMarqueeRect] = useState<CreativeCanvasRect | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const canvas = useCreativeStore((state) => state.canvas);
@@ -466,21 +484,25 @@ function CreativeCanvasSurface({
   );
 
   useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      const state = dragStateRef.current;
-      if (!state) return;
+    // 应用合帧后的指针坐标（每帧最多一次 setState）
+    const applyPointerFrame = () => {
+      frameRef.current = null;
+      const coords = pendingMoveRef.current;
+      pendingMoveRef.current = null;
+      const state = coords ? dragStateRef.current : null;
+      if (!state || !coords) return;
 
       if (state.type === "pan") {
         setViewport({
-          x: state.startViewport.x + event.clientX - state.startClientX,
-          y: state.startViewport.y + event.clientY - state.startClientY,
+          x: state.startViewport.x + coords.clientX - state.startClientX,
+          y: state.startViewport.y + coords.clientY - state.startClientY,
           zoom: state.startViewport.zoom,
         });
         return;
       }
 
       if (state.type === "marquee") {
-        const world = screenToWorld(event.clientX, event.clientY);
+        const world = screenToWorld(coords.clientX, coords.clientY);
         setMarqueeRect({
           x: Math.min(state.startWorld.x, world.x),
           y: Math.min(state.startWorld.y, world.y),
@@ -492,8 +514,8 @@ function CreativeCanvasSurface({
 
       if (state.type === "move") {
         const raw = {
-          x: state.startPosition.x + (event.clientX - state.startClientX) / state.zoom,
-          y: state.startPosition.y + (event.clientY - state.startClientY) / state.zoom,
+          x: state.startPosition.x + (coords.clientX - state.startClientX) / state.zoom,
+          y: state.startPosition.y + (coords.clientY - state.startClientY) / state.zoom,
         };
         const dragItem = canvas.items.find((item) => item.id === state.itemId);
         if (dragItem) {
@@ -507,12 +529,32 @@ function CreativeCanvasSurface({
       }
 
       resizeItem(state.itemId, {
-        width: state.startSize.width + (event.clientX - state.startClientX) / state.zoom,
-        height: state.startSize.height + (event.clientY - state.startClientY) / state.zoom,
+        width: state.startSize.width + (coords.clientX - state.startClientX) / state.zoom,
+        height: state.startSize.height + (coords.clientY - state.startClientY) / state.zoom,
       });
     };
 
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!dragStateRef.current) return;
+      pendingMoveRef.current = { clientX: event.clientX, clientY: event.clientY };
+      if (frameRef.current == null) {
+        frameRef.current = requestAnimationFrame(applyPointerFrame);
+      }
+    };
+
+    // 拖拽结束时同步应用尚未合帧的最后一次坐标，保证终点位置不丢
+    const flushPendingFrame = () => {
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      if (pendingMoveRef.current != null) {
+        applyPointerFrame();
+      }
+    };
+
     const handlePointerUp = (event: PointerEvent) => {
+      flushPendingFrame();
       const state = dragStateRef.current;
       if (state?.type === "marquee") {
         const world = screenToWorld(event.clientX, event.clientY);
@@ -539,6 +581,11 @@ function CreativeCanvasSurface({
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      pendingMoveRef.current = null;
     };
   }, [canvas.items, moveItem, resizeItem, selectedItemIds, screenToWorld, selectItems, setViewport]);
 
@@ -577,6 +624,42 @@ function CreativeCanvasSurface({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [clearSelection, redoCanvas, removeItems, selectedItemIds, undoCanvas]);
 
+  // 按住空格进入画布平移模式。排除名单：文本录入控件，以及 button/select——
+  // 后者为保留键盘可达性（Tab 聚焦后按空格激活）；鼠标点击过的按钮已在
+  // handleRootClickCapture 中失焦，不影响空格平移。
+  useEffect(() => {
+    const isTextEntryTarget = (event: KeyboardEvent) =>
+      event.target instanceof HTMLElement &&
+      (event.target.isContentEditable ||
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLButtonElement ||
+        event.target instanceof HTMLSelectElement);
+
+    const handleSpaceKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat || isTextEntryTarget(event)) return;
+      event.preventDefault();
+      spacePanRef.current = true;
+    };
+    const handleSpaceKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space") return;
+      spacePanRef.current = false;
+    };
+    const resetSpacePan = () => {
+      spacePanRef.current = false;
+    };
+
+    window.addEventListener("keydown", handleSpaceKeyDown);
+    window.addEventListener("keyup", handleSpaceKeyUp);
+    window.addEventListener("blur", resetSpacePan);
+    return () => {
+      window.removeEventListener("keydown", handleSpaceKeyDown);
+      window.removeEventListener("keyup", handleSpaceKeyUp);
+      window.removeEventListener("blur", resetSpacePan);
+      spacePanRef.current = false;
+    };
+  }, []);
+
   const handleWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -601,6 +684,20 @@ function CreativeCanvasSurface({
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      // 按住空格或鼠标中键：拖拽平移画布（素材之上同样生效），不改变当前选区。
+      // 该分支必须先于 [data-creative-item] 拦截判断，否则素材铺满画布时无法平移。
+      if (spacePanRef.current || event.button === 1) {
+        event.preventDefault();
+        dragStateRef.current = {
+          type: "pan",
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          startViewport: canvas.viewport,
+        };
+        document.body.style.cursor = "grabbing";
+        return;
+      }
+
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest("[data-creative-item]")) return;
       if (event.button !== 0) return;
@@ -700,6 +797,8 @@ function CreativeCanvasSurface({
                 viewport={canvas.viewport}
                 onSelect={() => selectItems([item.id])}
                 onMoveStart={(event) => {
+                  // 空格/中键平移优先：不拦截事件，让其冒泡到画布容器进入平移分支
+                  if (spacePanRef.current || event.button === 1) return;
                   if (item.locked) {
                     selectItems([item.id]);
                     return;
@@ -717,6 +816,8 @@ function CreativeCanvasSurface({
                   document.body.style.cursor = "grabbing";
                 }}
                 onResizeStart={(event) => {
+                  // 空格/中键平移优先：不拦截事件，让其冒泡到画布容器进入平移分支
+                  if (spacePanRef.current || event.button === 1) return;
                   event.stopPropagation();
                   dragStateRef.current = {
                     type: "resize",
@@ -761,6 +862,8 @@ function CreativeCanvasItemView({
   const updateAsset = useCreativeStore((state) => state.updateAsset);
   const assets = useCreativeStore((state) => state.assets);
   const previewUrl = getCreativeAssetPreviewUrl(asset);
+  const mediaKind: MediaKind = asset.kind === "text" ? "image" : asset.kind;
+  const media = useResilientMedia(previewUrl, mediaKind);
 
   const itemStyle: CSSProperties = {
     transform: `translate(${item.position.x}px, ${item.position.y}px)`,
@@ -816,17 +919,40 @@ function CreativeCanvasItemView({
           )
         )}
         {asset.kind === "image" && (
-          previewUrl ? (
-            <img src={previewUrl} alt={asset.title} className="h-full w-full object-contain" draggable={false} />
+          previewUrl && !media.failed ? (
+            <img
+              key={media.stage}
+              src={media.src}
+              crossOrigin={media.crossOrigin}
+              alt={asset.title}
+              className="h-full w-full object-contain"
+              draggable={false}
+              onError={media.onMediaError}
+            />
           ) : (
-            <EmptyAsset icon={<Image className="h-7 w-7" />} label="图片缺失" />
+            <EmptyAsset
+              icon={<Image className="h-7 w-7" />}
+              label={previewUrl ? "图片加载失败" : "图片缺失"}
+            />
           )
         )}
         {asset.kind === "video" && (
-          previewUrl ? (
-            <video src={previewUrl} className="h-full w-full bg-black object-contain" controls data-canvas-no-zoom />
+          previewUrl && !media.failed ? (
+            <video
+              key={media.stage}
+              src={media.src}
+              crossOrigin={media.crossOrigin}
+              className="h-full w-full bg-black object-contain"
+              controls
+              data-canvas-no-zoom
+              onError={media.onMediaError}
+              onCanPlay={media.onMediaReady}
+            />
           ) : (
-            <EmptyAsset icon={<FileVideo className="h-7 w-7" />} label="视频缺失" />
+            <EmptyAsset
+              icon={<FileVideo className="h-7 w-7" />}
+              label={previewUrl ? "视频加载失败" : "视频缺失"}
+            />
           )
         )}
         {asset.kind === "audio" && (
@@ -835,7 +961,21 @@ function CreativeCanvasItemView({
               <FileAudio className="h-4 w-4" />
               <span className="truncate">{asset.title}</span>
             </div>
-            {previewUrl ? <audio src={previewUrl} controls className="w-full" /> : <div className="text-xs text-base-content/40">音频缺失</div>}
+            {previewUrl && !media.failed ? (
+              <audio
+                key={media.stage}
+                src={media.src}
+                crossOrigin={media.crossOrigin}
+                controls
+                className="w-full"
+                onError={media.onMediaError}
+                onCanPlay={media.onMediaReady}
+              />
+            ) : (
+              <div className="text-xs text-base-content/40">
+                {previewUrl ? "音频加载失败" : "音频缺失"}
+              </div>
+            )}
           </div>
         )}
       </div>

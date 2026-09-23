@@ -30,7 +30,8 @@ export type CanvasAgentToolName =
   | "workflow.createNode"
   | "workflow.connectNodes"
   | "workflow.runNode"
-  | "workflow.selectNodes";
+  | "workflow.selectNodes"
+  | "generate_image_flow";
 
 export interface CanvasAgentToolDefinition {
   name: CanvasAgentToolName;
@@ -116,6 +117,18 @@ export const CANVAS_AGENT_TOOLS: CanvasAgentToolDefinition[] = [
     label: "选择工作流节点",
     write: true,
     exampleArgs: { nodeIds: [] },
+  },
+  {
+    name: "generate_image_flow",
+    label: "组合：图片生成流",
+    write: true,
+    exampleArgs: {
+      prompt: "生成一张产品海报，参考 @[asset_2] 的风格",
+      title: "Agent 图片生成流",
+      referenceAssetIds: ["asset_2"],
+      generatorNodeType: "imageGeneratorProNode",
+      position: { x: 120, y: 120 },
+    },
   },
 ];
 
@@ -466,9 +479,94 @@ function createOpsFromToolCall(
     case "workflow.selectNodes": {
       return { ok: true, ops: [{ type: "workflow.selectNodes", nodeIds: getStringArray(args.nodeIds) }] };
     }
+    case "generate_image_flow":
+      return buildGenerateImageFlowOps(args, useCreativeStore.getState().assets);
     default:
       return { ok: false, error: "该工具没有写操作映射" };
   }
+}
+
+// 组合编排工具 generate_image_flow：把「提示词素材 → 提示词节点 → 生成节点 → 连线 → 触发运行」
+// 展开为既有受控 ops，复用 validateCanvasAgentOpsAgainstState 与审批路径，不新增 op 类型。
+const IMAGE_GENERATOR_NODE_TYPES = new Set(["imageGeneratorProNode", "imageGeneratorFastNode"]);
+const GENERATOR_POSITION_OFFSET = { x: 360, y: 0 };
+
+export function buildGenerateImageFlowOps(
+  args: Record<string, unknown>,
+  assets: Array<{ id: string; label?: string }>
+): { ok: true; ops: CanvasAgentOp[] } | { ok: false; error: string } {
+  const prompt = getString(args.prompt);
+  if (!prompt) return { ok: false, error: "缺少 prompt" };
+
+  const unresolved = findUnresolvedAssetMentions(prompt, assets);
+  if (unresolved.length > 0) {
+    return {
+      ok: false,
+      error: `提及的素材不存在: ${unresolved.map((label) => "@[" + label + "]").join("、")}（只能引用快照中的 label）`,
+    };
+  }
+
+  const generatorType = getString(args.generatorNodeType) || "imageGeneratorProNode";
+  if (!IMAGE_GENERATOR_NODE_TYPES.has(generatorType)) {
+    return { ok: false, error: "生成节点类型仅支持 imageGeneratorProNode / imageGeneratorFastNode" };
+  }
+
+  // 可选参考素材：解析为真实素材后以 @[label] 提及注入提示词。
+  const refLabels: string[] = [];
+  for (const ref of getStringArray(args.referenceAssetIds)) {
+    const asset = assets.find((item) => item.id === ref || (item.label && item.label === ref));
+    if (!asset) return { ok: false, error: `素材不存在: ${ref}（可引用快照中的 label，如 asset_3）` };
+    const label = asset.label || asset.id;
+    if (!refLabels.includes(label)) refLabels.push(label);
+  }
+  const composedPrompt = refLabels.length > 0
+    ? `${prompt}\n\n参考素材：${refLabels.map((label) => `@[${label}]`).join(" ")}`
+    : prompt;
+
+  const title = getString(args.title) || prompt.slice(0, 18) || "Agent 图片生成流";
+  const basePosition = getPosition(args.position);
+  const generatorPosition = {
+    x: basePosition.x + GENERATOR_POSITION_OFFSET.x,
+    y: basePosition.y + GENERATOR_POSITION_OFFSET.y,
+  };
+  const promptNodeId = uuidv4();
+  const generatorNodeId = uuidv4();
+
+  const ops: CanvasAgentOp[] = [
+    {
+      type: "asset.add",
+      asset: {
+        kind: "text",
+        title,
+        text: composedPrompt,
+        tags: ["agent", "image-flow"],
+        source: "agent",
+        metadata: { flow: "generate_image_flow" },
+      },
+    },
+    {
+      type: "workflow.addNode",
+      nodeId: promptNodeId,
+      nodeType: "promptNode",
+      position: basePosition,
+      data: { label: title, prompt: composedPrompt } as Partial<CustomNodeData>,
+    },
+    {
+      type: "workflow.addNode",
+      nodeId: generatorNodeId,
+      nodeType: generatorType,
+      position: generatorPosition,
+    },
+    {
+      type: "workflow.connectNodes",
+      source: promptNodeId,
+      target: generatorNodeId,
+      sourceHandle: "output-prompt",
+      targetHandle: "input-prompt",
+    },
+    { type: "workflow.runNode", nodeId: generatorNodeId },
+  ];
+  return { ok: true, ops };
 }
 
 export function validateCanvasAgentOpsAgainstState(ops: CanvasAgentOp[]): string | null {

@@ -3,6 +3,7 @@ import {
   applyMuApiEventPollResult,
   createMuApiEventPollState,
   isMuApiEventPollStalled,
+  isMuApiJobStatusTerminal,
   type MuApiEventPollState,
 } from "@/services/muApiEventStream";
 import type {
@@ -982,4 +983,35 @@ export async function pollMuApiJobEvents(
     pollState: state,
     stalled: isMuApiEventPollStalled(state),
   };
+}
+
+// 查询远端会话的任务列表（刷新/重启后按会话恢复任务使用）。
+export async function listMuApiSessionJobs(
+  config: AgentProviderConfig,
+  remoteSessionId: string
+): Promise<MuApiJob[]> {
+  const jobs = await createMuApiClient(config).listSessionJobs(remoteSessionId);
+  return Array.isArray(jobs) ? jobs : [];
+}
+
+// 查询单个 job 状态；查询失败返回 null，由调用方在下一个轮询周期重试。
+export async function fetchMuApiJobStatus(config: AgentProviderConfig, jobId: string): Promise<MuApiJob | null> {
+  try {
+    return await createMuApiClient(config).getJobStatus(jobId);
+  } catch {
+    return null;
+  }
+}
+
+// 从任务列表中找出未完成（pending/processing 等非终态）的任务，优先返回最近更新的一个。
+export function findActiveMuApiJob(jobs: MuApiJob[]): MuApiJob | null {
+  const active = jobs.filter((job) => job && !isMuApiJobStatusTerminal(job.status));
+  if (active.length === 0) return null;
+  return active.reduce((latest, job) =>
+    remoteJobTime(job) >= remoteJobTime(latest) ? job : latest
+  );
+}
+
+function remoteJobTime(job: MuApiJob): number {
+  return parseRemoteTime(job.updated_at || job.created_at) || 0;
 }

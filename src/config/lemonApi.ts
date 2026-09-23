@@ -4,7 +4,7 @@ export const LEMON_API_CONFIG = {
     id: "default-lemon-api", // LLM ID
     imageId: "default-lemon-api-image", // Image ID
     name: "Lemon AI",
-    apiKey: "cat_768976896896464896",
+    apiKey: "", // 默认留空，用户在设置中自行配置 API Key
     baseUrl: "https://geminibiz.lemon.vin",
     protocol: "openai" as ProviderProtocol,
 };

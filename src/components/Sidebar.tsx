@@ -16,13 +16,16 @@ import {
   User,
   Settings,
   Images,
+  Globe,
+  RefreshCw,
 } from "lucide-react";
 import { CreativeAssetLibrary } from "@/components/creative/CreativeAssetLibrary";
 import { useCanvasStore, type SidebarView } from "@/stores/canvasStore";
 import { useUserPromptStore, type UserPrompt } from "@/stores/userPromptStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { nodeCategories, nodeIconMap, nodeIconColors } from "@/config/nodeConfig";
-import { promptCategories, promptIconMap, promptIconColors, type PromptItem } from "@/config/promptConfig";
+import { promptCategories, promptIconMap, promptIconColors, type PromptCategory, type PromptItem } from "@/config/promptConfig";
+import { fetchPromptMarket, type PromptMarketSnapshot } from "@/services/promptMarketService";
 import { Input } from "@/components/ui/Input";
 import { PromptPreviewModal } from "@/components/ui/PromptPreviewModal";
 import { PromptEditModal } from "@/components/ui/PromptEditModal";
@@ -37,6 +40,23 @@ const navItems: { id: SidebarView; icon: React.ComponentType<{ className?: strin
 
 interface SidebarProps {
   onDragStart: (event: React.DragEvent, nodeType: string, defaultData: Record<string, unknown>) => void;
+}
+
+// 按关键词过滤提示词分类（内置库与在线提示词共用）
+function filterPromptCategories(categories: PromptCategory[], query: string): PromptCategory[] {
+  const keyword = query.toLowerCase();
+  return categories
+    .map((category) => ({
+      ...category,
+      prompts: category.prompts.filter(
+        (prompt) =>
+          prompt.title.toLowerCase().includes(keyword) ||
+          prompt.titleEn.toLowerCase().includes(keyword) ||
+          prompt.description.toLowerCase().includes(keyword) ||
+          prompt.tags.some((tag) => tag.toLowerCase().includes(keyword))
+      ),
+    }))
+    .filter((category) => category.prompts.length > 0);
 }
 
 export function Sidebar({ onDragStart }: SidebarProps) {
@@ -83,6 +103,50 @@ export function Sidebar({ onDragStart }: SidebarProps) {
   const [isUserPromptsExpanded, setIsUserPromptsExpanded] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUserPrompt, setEditingUserPrompt] = useState<UserPrompt | null>(null);
+
+  // 在线提示词（GitHub 提示词市场）
+  const [isMarketExpanded, setIsMarketExpanded] = useState(false);
+  const [marketSnapshot, setMarketSnapshot] = useState<PromptMarketSnapshot | null>(null);
+  const [isMarketLoading, setIsMarketLoading] = useState(false);
+  const [expandedMarketCategories, setExpandedMarketCategories] = useState<Set<string>>(new Set());
+
+  const loadMarketPrompts = useCallback(async (force: boolean) => {
+    setIsMarketLoading(true);
+    try {
+      const snapshot = await fetchPromptMarket({ force });
+      setMarketSnapshot(snapshot);
+      setExpandedMarketCategories(new Set(snapshot.categories.map((category) => category.id)));
+    } catch {
+      // 服务层已静默回退内置库；这里兜底保证 UI 不被打断
+      setMarketSnapshot(null);
+    } finally {
+      setIsMarketLoading(false);
+    }
+  }, []);
+
+  const toggleMarketPrompts = useCallback(() => {
+    const next = !isMarketExpanded;
+    setIsMarketExpanded(next);
+    if (next && !marketSnapshot && !isMarketLoading) {
+      void loadMarketPrompts(false);
+    }
+  }, [isMarketExpanded, marketSnapshot, isMarketLoading, loadMarketPrompts]);
+
+  const refreshMarketPrompts = useCallback(() => {
+    void loadMarketPrompts(true);
+  }, [loadMarketPrompts]);
+
+  const toggleMarketCategory = useCallback((categoryId: string) => {
+    setExpandedMarketCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) {
+        next.delete(categoryId);
+      } else {
+        next.add(categoryId);
+      }
+      return next;
+    });
+  }, []);
 
   // 点击外部关闭菜单
   useEffect(() => {
@@ -210,18 +274,9 @@ export function Sidebar({ onDragStart }: SidebarProps) {
     .filter((category) => category.nodes.length > 0);
 
   // 过滤提示词
-  const filteredPromptCategories = promptCategories
-    .map((category) => ({
-      ...category,
-      prompts: category.prompts.filter(
-        (prompt) =>
-          prompt.title.toLowerCase().includes(promptSearchQuery.toLowerCase()) ||
-          prompt.titleEn.toLowerCase().includes(promptSearchQuery.toLowerCase()) ||
-          prompt.description.toLowerCase().includes(promptSearchQuery.toLowerCase()) ||
-          prompt.tags.some((tag) => tag.toLowerCase().includes(promptSearchQuery.toLowerCase()))
-      ),
-    }))
-    .filter((category) => category.prompts.length > 0);
+  const filteredPromptCategories = filterPromptCategories(promptCategories, promptSearchQuery);
+  const marketCategories = marketSnapshot?.source === "github" ? marketSnapshot.categories : [];
+  const filteredMarketCategories = filterPromptCategories(marketCategories, promptSearchQuery);
 
   // 获取当前打开菜单的画布
   const menuCanvas = menuOpenId ? canvases.find((c) => c.id === menuOpenId) : null;
@@ -476,6 +531,90 @@ export function Sidebar({ onDragStart }: SidebarProps) {
               </div>
 
               <div className="flex-1 overflow-y-auto p-3 space-y-4 custom-scrollbar">
+                {/* 在线提示词 */}
+                <div>
+                  <div className="flex items-center gap-1 px-2 py-1.5 mb-2">
+                    <button
+                      className="flex items-center gap-2 flex-1 min-w-0 text-sm font-semibold text-base-content/60 hover:text-base-content transition-colors"
+                      onClick={toggleMarketPrompts}
+                    >
+                      <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${isMarketExpanded ? "rotate-90" : ""}`} />
+                      <Globe className="w-3.5 h-3.5" />
+                      <span className="truncate">在线提示词</span>
+                      {marketSnapshot?.source === "github" && (
+                        <span className="badge badge-sm badge-secondary badge-outline ml-1">
+                          {marketSnapshot.categories.reduce((sum, category) => sum + category.prompts.length, 0)}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-xs btn-circle"
+                      title={marketSnapshot?.source === "github" ? "刷新在线提示词" : "获取在线提示词"}
+                      onClick={refreshMarketPrompts}
+                      disabled={isMarketLoading}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isMarketLoading ? "animate-spin" : ""}`} />
+                    </button>
+                  </div>
+
+                  {isMarketExpanded && (
+                    <div className="space-y-3">
+                      {isMarketLoading && !marketSnapshot && (
+                        <div className="px-3 py-2 text-xs text-base-content/50">正在加载在线提示词…</div>
+                      )}
+                      {!isMarketLoading && marketSnapshot?.source !== "github" && (
+                        <div className="px-3 py-2 text-xs text-base-content/40">
+                          暂时无法获取在线提示词，已显示内置库
+                        </div>
+                      )}
+                      {filteredMarketCategories.map((category) => {
+                        const MarketIcon = promptIconMap[category.icon];
+                        const marketColorClass = promptIconColors[category.icon] || "";
+                        return (
+                          <div key={category.id}>
+                            <button
+                              className="flex items-center gap-2 w-full px-2 py-1.5 mb-2 text-sm font-semibold text-base-content/60 hover:text-base-content transition-colors"
+                              onClick={() => toggleMarketCategory(category.id)}
+                            >
+                              <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${expandedMarketCategories.has(category.id) ? "rotate-90" : ""}`} />
+                              <div className={`p-1 rounded ${marketColorClass} bg-opacity-20`}>
+                                {MarketIcon && <MarketIcon className="w-3.5 h-3.5" />}
+                              </div>
+                              <span>{category.name}</span>
+                            </button>
+
+                            <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${expandedMarketCategories.has(category.id) ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                              <div className="overflow-hidden">
+                                <div className="grid grid-cols-1 gap-2 p-1">
+                                  {category.prompts.map((prompt) => (
+                                    <div
+                                      key={prompt.id}
+                                      className="draggable-prompt group flex items-start gap-3 p-3 bg-base-100/40 hover:bg-base-100/90 border border-transparent hover:border-base-content/5 hover:shadow-md rounded-xl transition-all cursor-grab"
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.setData("application/reactflow/prompt-template", JSON.stringify({ promptText: prompt.prompt, template: prompt.nodeTemplate }));
+                                        e.dataTransfer.effectAllowed = "move";
+                                      }}
+                                    >
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <div className="text-sm font-medium truncate">{prompt.title}</div>
+                                          <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-base-200 rounded-full transition-all" onClick={(e) => { e.stopPropagation(); openPromptPreview(prompt); }}><Eye className="w-3.5 h-3.5 text-base-content/60" /></button>
+                                        </div>
+                                        <div className="text-xs text-base-content/50 line-clamp-2">{prompt.description}</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {/* 用户提示词 */}
                 {userPrompts.length > 0 && (
                   <div>

@@ -65,7 +65,8 @@ export async function importProjectPackageFromWebDav(): Promise<ImportProjectPac
 }
 
 // 拉取并按 id/updatedAt 合并同步（替代整包覆盖式导入）。
-// Agent 会话不参与合并；删除操作没有墓碑机制，无法跨端同步。
+// Agent 会话不参与合并；素材/画布条目/品牌 Kit 的删除通过墓碑（CreativeTombstone）
+// 裁决后跨端传播（见 projectPackageService.applyTombstones），之后的重新编辑可复活。
 export async function syncProjectPackageFromWebDav(): Promise<{ warnings: string[] }> {
   const projectPackage = await downloadProjectPackageFromWebDav();
   return syncProjectPackage(projectPackage);

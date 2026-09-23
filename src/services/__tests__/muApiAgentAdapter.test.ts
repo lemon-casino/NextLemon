@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mapMuApiEvents, verifyMuApiConnection } from "@/services/muApiAgentAdapter";
+import {
+  fetchMuApiJobStatus,
+  findActiveMuApiJob,
+  mapMuApiEvents,
+  verifyMuApiConnection,
+} from "@/services/muApiAgentAdapter";
 import type { AgentProviderConfig } from "@/types/agent";
 
 const config: AgentProviderConfig = {
@@ -138,6 +143,48 @@ describe("muApiAgentAdapter", () => {
     expect(result.evidenceChecklist).toHaveLength(18);
     expect(result.blockingEvidenceIds).toContain("configured");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("findActiveMuApiJob", () => {
+  it("returns null for empty or fully terminal job lists", () => {
+    expect(findActiveMuApiJob([])).toBeNull();
+    expect(
+      findActiveMuApiJob([{ id: "job-1", status: "done" }, { id: "job-2", status: "cancelled" }])
+    ).toBeNull();
+  });
+
+  it("picks the most recently updated non-terminal job", () => {
+    const job = findActiveMuApiJob([
+      { id: "job-old", status: "processing", updated_at: "2026-01-01T00:00:00Z" },
+      { id: "job-done", status: "completed" },
+      { id: "job-new", status: "pending", updated_at: "2026-01-02T00:00:00Z" },
+    ]);
+    expect(job?.id).toBe("job-new");
+  });
+
+  it("treats jobs without a status as active", () => {
+    const job = findActiveMuApiJob([{ id: "job-1" }]);
+    expect(job?.id).toBe("job-1");
+  });
+
+  it("fetchMuApiJobStatus returns null when the request fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new Error("network down");
+    }));
+
+    await expect(fetchMuApiJobStatus(config, "job-1")).resolves.toBeNull();
+  });
+
+  it("fetchMuApiJobStatus returns the job payload on success", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      expect(url).toBe("https://muapi.test/api/v1/creative-agent/jobs/job-1/status");
+      return jsonResponse({ data: { id: "job-1", status: "processing" } });
+    }));
+
+    const job = await fetchMuApiJobStatus(config, "job-1");
+    expect(job?.id).toBe("job-1");
+    expect(job?.status).toBe("processing");
   });
 });
 
