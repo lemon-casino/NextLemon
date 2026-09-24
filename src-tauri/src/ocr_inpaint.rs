@@ -1,7 +1,10 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 // ==================== 数据结构 ====================
@@ -19,6 +22,9 @@ pub struct ProcessPageParams {
     /// 蒙版扩展边距（像素）
     #[serde(default = "default_mask_padding")]
     pub mask_padding: u32,
+    /// 协作取消令牌（可选）：前端分页循环传入，命中取消标志时提前返回 cancelled 结果
+    #[serde(default)]
+    pub cancel_token: Option<String>,
 }
 
 fn default_mask_padding() -> u32 {
@@ -42,6 +48,8 @@ pub struct TextBoxData {
 #[serde(rename_all = "camelCase")]
 pub struct ProcessPageResult {
     pub success: bool,
+    /// 是否命中协作取消标志
+    pub cancelled: bool,
     /// 去除文字后的背景图 (base64 PNG)
     pub background_image: Option<String>,
     /// 检测到的文本框列表
@@ -107,6 +115,57 @@ pub struct TestConnectionResult {
     pub message: String,
 }
 
+// ==================== PPT 组装协作取消 ====================
+
+// 取消标志注册表：token -> 共享原子标志
+// （Mutex::new(HashMap::new()) 不是 const，因此用 Option 包裹）
+//
+// 设计取舍：条目不做运行期清理（每次 PPT 组装注册一条 String + Arc<AtomicBool>，
+// 单条量级约几十字节，应用生命周期内缓慢增长，可忽略）。不清理的原因：
+// 1) 取消可能发生在分页中途，提前移除会让同 token 的后续分页/重试查不到取消状态；
+// 2) 精确清理需前端在组装结束后调用按 token 移除的清理命令（跨包契约扩展，暂无）。
+static PPT_CANCEL_FLAGS: Mutex<Option<HashMap<String, Arc<AtomicBool>>>> = Mutex::new(None);
+
+/// 取消命令结果
+#[derive(Debug, Serialize)]
+pub struct CancelAssemblyResult {
+    pub cancelled: bool,
+}
+
+// 获取注册表锁（毒化时忽略毒化继续使用）
+fn lock_cancel_flags() -> MutexGuard<'static, Option<HashMap<String, Arc<AtomicBool>>>> {
+    PPT_CANCEL_FLAGS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// 获取（不存在则注册）token 对应的取消标志
+fn get_cancel_flag(token: &str) -> Arc<AtomicBool> {
+    let mut guard = lock_cancel_flags();
+    guard
+        .get_or_insert_with(HashMap::new)
+        .entry(token.to_string())
+        .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+        .clone()
+}
+
+// 查询 token 是否已被取消
+fn is_ppt_assembly_cancelled(token: &str) -> bool {
+    let guard = lock_cancel_flags();
+    if let Some(map) = guard.as_ref() {
+        if let Some(flag) = map.get(token) {
+            return flag.load(Ordering::SeqCst);
+        }
+    }
+    false
+}
+
+/// 取消 PPT 组装：设置 token 对应的取消标志，分页循环在下次迭代时提前返回
+#[tauri::command]
+pub fn cancel_ppt_assembly(token: String) -> CancelAssemblyResult {
+    println!("[Rust] cancel_ppt_assembly called, token: {}", token);
+    get_cancel_flag(&token).store(true, Ordering::SeqCst);
+    CancelAssemblyResult { cancelled: true }
+}
+
 // ==================== Tauri 命令 ====================
 
 /// 处理单个 PPT 页面：OCR 识别 + 背景修复
@@ -115,6 +174,20 @@ pub async fn process_ppt_page(params: ProcessPageParams) -> ProcessPageResult {
     println!("[Rust] process_ppt_page called");
     println!("[Rust] OCR API: {}", params.ocr_api_url);
     println!("[Rust] Inpaint API: {}", params.inpaint_api_url);
+
+    // 协作取消：分页迭代开始时检查取消标志，命中则提前返回
+    if let Some(ref token) = params.cancel_token {
+        if is_ppt_assembly_cancelled(token) {
+            println!("[Rust] process_ppt_page cancelled before OCR");
+            return ProcessPageResult {
+                success: false,
+                cancelled: true,
+                background_image: None,
+                text_boxes: vec![],
+                error: Some("PPT 组装已被取消".to_string()),
+            };
+        }
+    }
 
     // 创建 HTTP 客户端
     let client = match Client::builder()
@@ -125,6 +198,7 @@ pub async fn process_ppt_page(params: ProcessPageParams) -> ProcessPageResult {
         Err(e) => {
             return ProcessPageResult {
                 success: false,
+                cancelled: false,
                 background_image: None,
                 text_boxes: vec![],
                 error: Some(format!("创建 HTTP 客户端失败: {}", e)),
@@ -140,6 +214,7 @@ pub async fn process_ppt_page(params: ProcessPageParams) -> ProcessPageResult {
         Err(e) => {
             return ProcessPageResult {
                 success: false,
+                cancelled: false,
                 background_image: None,
                 text_boxes: vec![],
                 error: Some(format!("OCR 服务调用失败: {}", e)),
@@ -156,10 +231,25 @@ pub async fn process_ppt_page(params: ProcessPageParams) -> ProcessPageResult {
     if ocr_result.text_boxes.is_empty() {
         return ProcessPageResult {
             success: true,
+            cancelled: false,
             background_image: Some(params.image_data),
             text_boxes: vec![],
             error: None,
         };
+    }
+
+    // 协作取消：进入背景修复（最耗时步骤）前再检查一次取消标志
+    if let Some(ref token) = params.cancel_token {
+        if is_ppt_assembly_cancelled(token) {
+            println!("[Rust] process_ppt_page cancelled before inpaint");
+            return ProcessPageResult {
+                success: false,
+                cancelled: true,
+                background_image: None,
+                text_boxes: ocr_result.text_boxes,
+                error: Some("PPT 组装已被取消".to_string()),
+            };
+        }
     }
 
     // 2. 创建蒙版并调用 Inpaint 服务
@@ -179,6 +269,7 @@ pub async fn process_ppt_page(params: ProcessPageParams) -> ProcessPageResult {
         Err(e) => {
             return ProcessPageResult {
                 success: false,
+                cancelled: false,
                 background_image: None,
                 text_boxes: ocr_result.text_boxes,
                 error: Some(format!("背景修复失败: {}", e)),
@@ -190,6 +281,7 @@ pub async fn process_ppt_page(params: ProcessPageParams) -> ProcessPageResult {
 
     ProcessPageResult {
         success: true,
+        cancelled: false,
         background_image: Some(background_image),
         text_boxes: ocr_result.text_boxes,
         error: None,
@@ -550,4 +642,23 @@ fn create_mask_image(
     let mask_base64 = STANDARD.encode(buffer.into_inner());
 
     Ok(mask_base64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{get_cancel_flag, is_ppt_assembly_cancelled};
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn unknown_token_is_not_cancelled() {
+        assert!(!is_ppt_assembly_cancelled("never-registered-token"));
+    }
+
+    #[test]
+    fn cancel_flag_roundtrip() {
+        let token = "ppt-cancel-token-roundtrip";
+        assert!(!is_ppt_assembly_cancelled(token));
+        get_cancel_flag(token).store(true, Ordering::SeqCst);
+        assert!(is_ppt_assembly_cancelled(token));
+    }
 }

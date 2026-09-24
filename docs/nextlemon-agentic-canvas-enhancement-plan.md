@@ -418,7 +418,7 @@ PR 12 当前边界：
 
 ## 6.2 参考项目设计吸收对照与未吸收清单
 
-对照 `Open-AI-Design-Agent` 与 `infinite-canvas` 的实际设计逐项核对，本方案的吸收情况如下。2026-09-24 能力差距收口后已复核本节：修正了此前对 skills 端点"已吸收"的夸大表述（实际无应用内调用方），并把本次收口新增吸收与明确延后项补入对照，逐包明细见 `docs/gap-closure-2026-09-24.md`。
+对照 `Open-AI-Design-Agent` 与 `infinite-canvas` 的实际设计逐项核对，本方案的吸收情况如下。2026-09-24 能力差距收口（两批）后已复核本节：第一批修正了此前对 skills 端点"已吸收"的夸大表述（当时实际无应用内调用方）；第二批按未覆盖清单回填了实时桥、双引擎会话、图片编辑工具链等能力并接入 Skills UI（skills 行已同步更新）。两批新增吸收与明确延后项均补入对照，逐包明细见 `docs/gap-closure-2026-09-24.md`。
 
 已吸收并落地的设计：
 
@@ -427,7 +427,7 @@ PR 12 当前边界：
 | Open-AI-Design-Agent：brief -> 计划 -> 审批 -> 执行 | PR 9 `designPlanPlanner`，计划可视化编辑、依赖拓扑校验 |
 | Open-AI-Design-Agent：审批协议（approve/reject/cancel） | PR 6/8 审批队列与 MuAPI 端点映射 |
 | Open-AI-Design-Agent：job/event 事件流与 `?since=` 游标 | PR 8 `muApiAgentAdapter`（含增量拉取） |
-| Open-AI-Design-Agent：skills / run-skill / account 端点边界 | PR 8 适配器已实现端点，且仅由 CLI/应用内验证器调用（`muApiAgentAdapter.ts:349-350` 调 `getAccountBalance`/`listAgentSkills`）；应用内无业务调用方——`runSkill`（`muApiAgentAdapter.ts:226`）目前零调用方，Skills 未接入 UI 与工具循环，2026-09-24 收口亦未实现 Skills UI（2026-09-24 核实修正，此前表述"端点覆盖"易被误读为已接入应用） |
+| Open-AI-Design-Agent：skills / run-skill / account 端点边界 | PR 8 适配器已实现端点，且由 CLI/应用内验证器调用（`muApiAgentAdapter.ts:349-350` 调 `getAccountBalance`/`listAgentSkills`）。第一批收口时核实修正：当时 `runSkill`（`muApiAgentAdapter.ts:226`）零调用方、应用内未接入 Skills UI，此前"端点覆盖"表述易被误读为已接入应用。第二批收口已接入 Skills UI——`listAgentSkills` 拉取技能为输入区上方可钉选 chip，钉选后一句话发起自动映射必填输入并切换 `runSkill` 端点（`AgentPanel.tsx:390-403,543-588`），`runSkill` 现有应用内调用方；真实 MuAPI 实机验收仍待用户配置密钥 |
 | infinite-canvas：自由素材画布（平移/缩放/网格/变换） | PR 3 创作画布，且补充了参考项目没有的层级/锁定/隐藏 |
 | infinite-canvas：JSON 状态与大文件分离存储 | 第 2 节存储原则 + PR 2 图片走 Tauri 文件路径 |
 | infinite-canvas：受控画布助手 + 操作 schema | PR 7 `canvasAgentRuntime` 受控工具与参数校验 |
@@ -467,9 +467,29 @@ PR 12 当前边界：
 | infinite-canvas：受控画布助手的组合编排扩展 | `generate_image_flow` 组合工具（`canvasAgentRuntime.ts:34,122,482-544`）：入参 prompt + 可选参考素材，内部展开为「提示词素材 → 提示词节点 → 生成节点 → 连线 → 触发运行」共 5 个既有受控 op，复用 `validateCanvasAgentOpsAgainstState` 与既有审批路径，不新增 op 类型；已加入工具循环 schema 与系统提示词（`agentToolLoop.ts:73,237`）。MCP 侧暴露延后（readiness 脚本把本地 MCP 工具数钉死为 11，见未吸收清单） |
 | Open-AI-Design-Agent：会话消息 Markdown 渲染 | Agent 面板 text 分支与助手消息内容改用 react-markdown 渲染，`skipHtml` 禁用原始 HTML 注入，URL 经 react-markdown 默认净化（`AgentPanel.tsx:2,1359`） |
 
+2026-09-24 第二批收口新增吸收（回填当时"未吸收清单"的运行级延后项；Rust 项均未经本机编译，待 CI 验证）：
+
+| 参考项目设计 | 收口落地 |
+| --- | --- |
+| infinite-canvas：本地 Agent 桥的实时双向通道（SSE hub） | `scripts/nextlemon-agent-bridge.mjs` 零依赖 hub（仅绑定 127.0.0.1，page/agent 双通道转发 snapshot/tool-call/tool-result/approval、心跳 keep-alive、断线清理、requestId 配对、全路由 token 校验、localhost-only CORS，`--port`/`--token` 及环境变量可配）+ `src/services/agentRealtimeBridge.ts`（EventSource 连接、tool-call 走 `window.nextlemonAgentBridge` 同源受控执行——写操作仅经 `requestLocalAgentBridgeApproval` 审批队列（`agentRealtimeBridge.ts:224`）、定期上报画布/会话摘要、指数退避重连、`useSyncExternalStore` 状态源）；`LocalAgentBridgePanel` 实时桥状态与自动连接开关、`LocalAgentBridgeRuntime` 按配置自动连接/重连、`package.json` 新增 `bridge:local`。EventSource 无法携带自定义头，`GET /events` 等价接受 token 查询参数（其余 POST 路由仍只认请求头） |
+| Open-AI-Design-Agent / infinite-canvas：双引擎本地 Agent 会话（Codex app-server / Claude Code stream-json 子进程） | `src/services/agentEngines.ts` 双 CLI 适配器（Codex `exec --json` 旧/新形态 + app-server JSON-RPC 通知、Claude Code stream-json，按行解析为 Agent 事件、失败降级 raw 行），经 Rust `spawn_agent_process`/`kill_agent_process`（`src-tauri/src/agent_process.rs:100,155`：stdin 托管于注册表、stdout/stderr 按行经 `agent-engine-event` 推送，`lib.rs:43-44` 注册）与事件驱动回合；Agent 面板 Local Provider 四选引擎（本地规则/模型工具循环/Codex/Claude Code）+ 可执行文件路径/工作目录/`--model` 配置，metadata 记录 `engineSessionId`/`engineProcessId`。Codex/Claude CLI 实机联调待跨包验证；Rust 侧待 CI 编译验证 |
+| 节点级图片编辑工具链（裁剪/旋转/九宫格/尺寸导出/放大/反推词/局部重绘） | `src/services/imageEditService.ts`（canvas 实现下沉为可单测纯函数 `computeCropRect`/`computeRotatedSize`/`computeGridSlices`/`computeResizedSize`/`pickClosestAspectRatio`；放大走既有 img2img 通道、反推词走 llmService 视觉输入、局部重绘转发 `ocrInpaintService.inpaintRegion`（`ocrInpaintService.ts:97`，优先契约命令 `inpaint_region`、缺失/失败回退直连 IOPaint HTTP）；支持 dataUrl/http/本地路径输入归一化）+ `src/components/creative/ImageDetailModal.tsx` 工具条弹窗（产出经 `creativeStore.addAsset` 入素材库、可选落画布）。编辑工具条尚未接入素材库/画布预览入口（接入点文件范围外，见未吸收清单） |
+| infinite-canvas：批量图组折叠栈 + 生成节点多图张数参数 | 折叠栈：`creativeStore` 契约入口 `addImageBatchToCanvas`/`addAssetBatchToCanvas`/`setBatchExpanded`（`creativeStore.ts:53-57,574-604`，展开为主图原位起算网格/收起叠放、主图拖动整体跟随、删子图自动重选主图/删主图晋升首个存活子图、主图 zIndex 置顶保证折叠态导出兼容）；类型经 `types/index.ts` `declare module` 扩充 `isBatchRoot` 等可选字段（`CreativeCanvasItem` 本体在范围外文件）。张数：`src/types/generation.ts`（`normalizeImageCount`/`planImageCountRequests`）+ `imageService` 按张数拆分请求（≤3 信号量并发，聚合 images 数组）+ `ImageGeneratorNode` 1-4 张数选择 + `nodeExecutor` 透传产出 images 数组。`n` 直传分支已实现但当前不可达（`IMAGE_GEN_UPSTREAM_SUPPORTS_N=false`，`imageService.ts:24`），上游支持后翻转开关即生效 |
+| infinite-canvas：WebDAV 媒体文件差量同步 | `src/services/mediaSyncService.ts`（WebCrypto sha-256 内容寻址 key、固定并发 3 上传 `PUT /media/<sha256>.<ext>`、PROPFIND+长度一致跳过、远端有本地缺的经 `save_media_file` 回填并重写素材 storagePath、onProgress 全程回调、浏览器自动降级）+ `webDavSyncService` 通用 `webDavRequest`（PUT/GET/PROPFIND，:102）与上传前差量同步/导入后缺失回填 + `projectPackageService` 可选 `mediaManifest` 字段（schemaVersion 1 兼容扩展，:33-35）与 sha256 清单合并 + `ProjectPackagePanel`「同步媒体文件」开关与分阶段进度。依赖的 Rust `read_media_file`（`storage.rs:644`）待 CI 编译验证 |
+| infinite-canvas：画布视口外实例裁剪渲染 | `isItemVisibleInViewport` 纯函数（约 200 屏幕像素缓冲、按 zoom 换算）+ `CreativeCanvasSurface` 以 ResizeObserver 跟踪容器尺寸、只渲染视口内实例（`CreativeWorkspace.tsx:525`）；选中/拖拽中实例强制保留，store 数据保持全量（框选/导出/小地图仍读全量） |
+| Open-AI-Design-Agent：PPT 组装后端协作取消 | Rust 取消注册表（静态 `Mutex<Option<HashMap<String, Arc<AtomicBool>>>>`）+ `cancel_ppt_assembly` 命令（`ocr_inpaint.rs:163`，`lib.rs:41` 注册）；`process_ppt_page` 每页在 OCR 前与修复前各检查取消标志，命中返回 `cancelled: true` 结构化结果；`PPTAssemblerNode` 停止按钮生成随机 token 随任务保存（`index.tsx:231`）、停止时 `invoke("cancel_ppt_assembly", { token })`（Rust 缺失回退本地停止），返回取消时提示「已取消，已完成 N 页」。Rust 侧待 CI 编译验证 |
+| infinite-canvas：本地文件命令路径白名单 | `storage.rs` 新增 `sanitize_canvas_id`（:104，拒绝空串/路径分隔符/`.`/`..`/空字符）应用于 `save_image`/`delete_canvas_images`/`list_canvas_images` 三处拼接点（:147,235,385）；`read_image`/`delete_image` 增加 `AppHandle` 并限定应用数据目录；新增 media 目录白名单 `read_media_file`（:644）；含 8 个 `#[cfg(test)]` 纯函数单测。本机无 cargo 未编译验证，待桌面端 CI 确认 |
+| Open-AI-Design-Agent：URL 深链握手（web 侧） | `App.tsx` `?q=` 幂等消费：agentStore hydration 后解析 `location.search` → 宽松调用 `createSessionFromBrief`（缺契约时回退 `createSession`+`addMessage` 等价组合）→ `history.replaceState` 清参，模块级 flag 保证只消费一次（`App.tsx:27,45-52,141`）。Tauri `onOpenUrl` 未接入（仓库无 deep-link 插件依赖），留待后续 |
+| Open-AI-Design-Agent：首页会话卡片马赛克预览 | `src/components/RecentProjectsPanel.tsx`（聚合 `agentStore.sessions` + `creativeStore.assets`，卡片 2×2 马赛克封面、不足 4 张渐变占位，显示标题/相对时间/素材数，点击经 `setActiveSession`+`setMode("creative")` 回访会话；导出 `collectRecentProjects` 等纯函数）+ Sidebar 图标轨「最近项目」入口（`Sidebar.tsx:320-336`）。会话-资产当前为只读启发式关联（无显式关联字段） |
+| Open-AI-Design-Agent：Skills 专家工作流 UI | Agent 面板 muapi 技能经 `listAgentSkills` 拉取为输入区上方可钉选 chip（`AgentPanel.tsx:390-403`），钉选后一句话发起自动映射必填输入并切换 `runSkill` 端点（:543-588）；真实 MuAPI 实机验收仍待配置密钥 |
+| Open-AI-Design-Agent：会话消息快照回写服务端 | muapi 会话任务到达终态后调用 `updateSession`（PATCH）回写消息快照（`AgentPanel.tsx:420,600-608`），失败静默记入事件流 |
+| Open-AI-Design-Agent / infinite-canvas：密钥会话级保存 | `agentStore`「仅本会话保存 API Key」开关：勾选 provider 的 apiKey 经 `stripSessionOnlyProviderApiKeys`（`agentStore.ts:403,415`）不进 partialize 持久化，内存保留、刷新即清。属会话级内存保管；服务端保管/Tauri 安全存储仍未做（见未吸收清单） |
+
 本次收口同批还包含与参考项目无直接对应关系的工程与体验补强：默认 API Key 置空并全配置目录密钥扫描、画布指针拖拽/视口更新 rAF 合帧、空格与中键平移、`tauriStorage` 落盘防抖（`createDebouncedSaver`）、媒体加载 CORS 降级重试（`src/utils/mediaLoadStrategy.ts`）、小地图拖拽取景、PPT 内容节点两阶段自动执行与 `mapWithConcurrency` 信号量并发、在线提示词市场（`src/services/promptMarketService.ts`）、会话行内重命名、构建 manualChunks 分包与项目包合并升级等——逐包摘要、验证与延后明细见 `docs/gap-closure-2026-09-24.md`。
 
-仍未吸收、留作后续增强的设计（按建议优先级排序；2026-09-24 收口后复核更新）：
+第二批收口同批还包含：`agentStore.createSessionFromBrief` 契约导出（供深链与外部 brief 复用）、批量栈交互（展开/收起、主图拖动整体跟随）与"主图拖动排除自身子图吸附"的派生 bug 修复、9 个新增测试文件（实时桥 17、双引擎 38、最近项目 17、张数/PPT 取消 20、图片编辑 39、媒体同步 20 等用例，包内上报全量 vitest 350 用例通过）、PPT 页级取消纯函数与媒体 sha-256 差量协议等——逐包明细见 `docs/gap-closure-2026-09-24.md` 3.7–3.14。
+
+仍未吸收、留作后续增强的设计（按建议优先级排序；2026-09-24 两批收口后复核更新，第二批已完成的项已移入上方对照表）：
 
 既有余项：
 
@@ -480,18 +500,18 @@ PR 12 当前边界：
 本轮评估明确延后（含原因；完整记录见 `docs/gap-closure-2026-09-24.md` 第 4 节）：
 
 4. MCP 侧暴露 `generate_image_flow`：readiness 脚本把本地 MCP 工具数钉死为 11（`scripts/verify-agentic-readiness.mjs:466`、`scripts/verify-local-mcp.mjs:538`），新增第 12 个工具后下次重新生成 readiness 报告时 `npm run verify:mcp` 的 reports 步骤必然失败，需连同脚本与已发布报告一起更新。
-5. 本地 Agent/MCP 桥的 SSE 实时双向通道：需常驻本地服务，跨 TS/Rust/协议三层，单次运行无法验证。
-6. 双引擎本地 Agent 会话（Codex app-server / Claude Code stream-json 子进程对接）。
-7. 节点级图片编辑工具链（反推提示词/裁剪/九宫格拆分/放大超分/通用局部重绘）。
-8. 批量图组折叠栈与生成节点多图张数参数：需要新数据结构加整套交互。
-9. WebDAV 媒体文件差量同步：需 Rust 端配合与协议设计。
-10. 画布视口外实例裁剪渲染。
-11. PPT 组装节点后端协作取消：需 Rust 侧取消令牌。
-12. `src-tauri/src/storage.rs` 文件命令路径白名单：本机无 cargo，无法编译验证，不推送未验证的 Rust 代码，留待有 Rust 工具链时处理。
-13. 嵌入模式（embed code 分发）、URL 深链握手、首页会话卡片马赛克预览：应用当前无首页结构，属产品级新功能。
-14. Skills 专家工作流 UI、会话消息快照回写服务端、密钥服务端保管/Tauri 安全存储：依赖远端 MuAPI 真实验收，当前 blocked；skills 端点现状见上表说明（仅验证器调用，无应用内调用方，本轮亦未实现 Skills UI）。
-15. `@[asset_N]` 还原接入手动按钮路径（`flowStore.getConnectedInputData`）：本轮范围外，仅接入工作流自动执行的输入组装。
-16. `creativeStore` 双重导入根因修复（`creativeAssetService.ts:190` 的 `await import` 改静态导入）：该文件不在本轮可编辑范围，暂以 vite `manualChunks` 将 creativeStore 独立分包缓解。
+5. Rust 改动编译验证：第二批的 storage.rs 路径白名单、ocr_inpaint.rs 取消注册表、agent_process.rs 子进程托管全部未在本机编译（无 cargo/rustc），TS 侧消费端已就位，需桌面端 CI 构建确认后才算闭环。
+6. Codex/Claude CLI 实机联调：本机无这两个 CLI，`agentEngines.ts` 的解析与启动参数按官方公开协议最佳实现，实际子进程行为（codex exec resume 参数位置、claude --resume 行为）待联调验证。
+7. `ImageDetailModal` 编辑工具条接入素材库/画布预览入口：`CreativeAssetLibrary.tsx`/`CreativeWorkspace.tsx` 在第二批该包范围外（只读），组件已交付待接线。
+8. 批量栈与生成侧的收尾接线：`workflowAssetService.createCreativeAssetDraftsFromWorkflowNode` 仍读单图字段（outputImage/outputImagePath），`creativeAutoSink` 逐张落位未切换为 `addImageBatchToCanvas` 建栈——两文件均在对应包范围外，接线后批量栈自动生效。
+9. `inpaint_region` Rust 命令落地：不在第二批跨包契约清单；TS 侧已宽松调用并在缺失/失败时回退直连 IOPaint HTTP，功能不阻塞，命令注册后走原生路径。
+10. `n` 直传分支翻转：`IMAGE_GEN_UPSTREAM_SUPPORTS_N=false`（`imageService.ts:24`；Google generateContent 图片模型仅单候选、Lemon 流式 chat 无 n、Tauri 代理契约参数固定），上游支持 n 后翻转开关、`planImageCountRequests` 直传路径即生效。
+11. Tauri `onOpenUrl` 深链接入：仓库无 deep-link 插件依赖，第二批仅做 web 侧 `?q=` 消费（`App.tsx` `consumeBriefFromUrl`）。
+12. 最近项目面板会话-资产显式关联：两 store 均未写入关联字段，当前为只读启发式（`session.metadata.assetIds` → `asset.metadata.sessionId` → agent 来源 + 60s 窗口兜底）；写入显式字段后自动优先生效。
+13. 密钥服务端保管/Tauri 安全存储：第二批仅落地会话级保存（内存保留、不持久化、刷新即清，`agentStore.ts:403,415`）；服务端保管仍依赖远端 MuAPI 真实验收与安全存储设施。
+14. 嵌入模式（embed code 分发）：明确不做——需托管 Web 部署与服务端 header 鉴权语境，桌面单机应用没有对应载体，实现等于发明一个新产品面；如未来做 Web 版再立项。
+15. `@[asset_N]` 还原接入手动按钮路径（`flowStore.getConnectedInputData`）：两批均范围外，仅接入工作流自动执行的输入组装。
+16. `creativeStore` 双重导入根因修复（`creativeAssetService.ts:190` 的 `await import` 改静态导入）：该文件不在两轮可编辑范围，暂以 vite `manualChunks` 将 creativeStore 独立分包缓解。
 17. 独立 `pptOutlineNode` 节点类型：代码库不存在该类型（`src/types/workflow.ts:45` 的 `EXECUTABLE_NODE_TYPES` 仅含 pptContentNode 等 5 类），PPT 大纲阶段已按 `pptContentNode` 实现。
 
 ## 7. 颗粒度对齐核对

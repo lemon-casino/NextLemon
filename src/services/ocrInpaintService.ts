@@ -55,6 +55,129 @@ interface TestConnectionResult {
   message: string;
 }
 
+// ==================== 通用局部重绘（泛化入口） ====================
+
+/** 默认 IOPaint 服务地址（与 PPT 节点默认配置一致） */
+export const DEFAULT_INPAINT_API_URL = "http://127.0.0.1:8080";
+
+/** 通用局部重绘参数（mask + prompt → inpaint） */
+export interface InpaintRegionParams {
+  /** base64 原图（不含 data: 前缀） */
+  imageData: string;
+  /** base64 蒙版，黑色 = 保留、白色 = 重绘（与 IOPaint 约定一致），尺寸需与原图一致 */
+  maskData: string;
+  /** 重绘内容提示词 */
+  prompt: string;
+  /** IOPaint 服务地址；缺省 DEFAULT_INPAINT_API_URL（仅 HTTP 回退路径使用） */
+  inpaintApiUrl?: string;
+  /** HTTP 回退请求超时（毫秒）；缺省 300_000，与 Rust 侧 call_inpaint_service 的 300s 一致 */
+  timeoutMs?: number;
+}
+
+/** 通用局部重绘结果 */
+export interface InpaintRegionResult {
+  /** 重绘后的图片 base64（不含 data: 前缀） */
+  image: string;
+}
+
+interface InpaintRegionCommandResult {
+  success: boolean;
+  image?: string;
+  error?: string;
+}
+
+/**
+ * 通用局部重绘入口：与 PPT 页面可编辑化流程（processPageForEditable，OCR 驱动的整页去字）
+ * 互不影响。当前实际路径是直连 IOPaint HTTP API（/api/v1/inpaint，请求/响应格式与 Rust 侧
+ * ocr_inpaint.rs 的 call_inpaint_service 保持一致：JSON 载荷 + 二进制图片响应）。
+ * invoke("inpaint_region") 为预留契约——Rust 侧 invoke_handler 尚未注册该命令，调用必然
+ * reject 后走 HTTP 回退；Rust 包补充该命令后（入参 { params: { imageData, maskData, prompt } }、
+ * 返回 { success, image?, error? }）将自动优先走原生通道。
+ */
+export async function inpaintRegion(params: InpaintRegionParams): Promise<InpaintRegionResult> {
+  if (!params.imageData?.trim()) {
+    throw new Error("缺少原图数据，无法局部重绘");
+  }
+  if (!params.maskData?.trim()) {
+    throw new Error("缺少重绘蒙版，请先涂抹需要重绘的区域");
+  }
+  if (!params.prompt?.trim()) {
+    throw new Error("请输入重绘内容提示词");
+  }
+
+  if (isTauriEnvironment()) {
+    try {
+      // 预留契约（Rust 侧未注册，当前必然 reject 走 HTTP 回退；命令落地后自动优先走此通道）
+      const result = await invoke<InpaintRegionCommandResult>("inpaint_region", {
+        params: {
+          imageData: params.imageData,
+          maskData: params.maskData,
+          prompt: params.prompt,
+        },
+      });
+      if (result?.success && result.image) {
+        return { image: result.image };
+      }
+      throw new Error(result?.error || "局部重绘失败");
+    } catch (commandError) {
+      try {
+        return await inpaintRegionViaHttp(params);
+      } catch (httpError) {
+        const commandMessage = commandError instanceof Error ? commandError.message : String(commandError);
+        const httpMessage = httpError instanceof Error ? httpError.message : String(httpError);
+        throw new Error(`局部重绘失败：${httpMessage}（inpaint_region 命令：${commandMessage}）`);
+      }
+    }
+  }
+
+  return inpaintRegionViaHttp(params);
+}
+
+/** 直连 IOPaint HTTP API 的回退实现（与 Rust 侧请求格式一致；带超时防挂起） */
+async function inpaintRegionViaHttp(params: InpaintRegionParams): Promise<InpaintRegionResult> {
+  const apiBase = (params.inpaintApiUrl || DEFAULT_INPAINT_API_URL).replace(/\/+$/, "");
+  const timeoutMs = params.timeoutMs ?? 300_000;
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}/api/v1/inpaint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: params.imageData,
+        mask: params.maskData,
+        prompt: params.prompt,
+        ldm_steps: 30,
+        hd_strategy: "Original",
+      }),
+      // 与 Rust 侧 call_inpaint_service 的 300s 超时对齐，避免服务挂起时无限期等待
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : "";
+    if (errorName === "TimeoutError" || errorName === "AbortError") {
+      throw new Error(
+        `IOPaint 局部重绘请求超时（${Math.round(timeoutMs / 1000)} 秒），请检查服务是否繁忙或已挂起`
+      );
+    }
+    throw new Error(
+      `无法连接 IOPaint 服务（${apiBase}），请检查服务是否启动: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  if (!response.ok) {
+    const errorText = (await response.text().catch(() => "")).slice(0, 200);
+    throw new Error(`IOPaint 服务返回错误 (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  // IOPaint 直接返回图片二进制（与 Rust 侧处理一致）
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length === 0) {
+    throw new Error("IOPaint 服务返回了空图片数据");
+  }
+  return { image: uint8ArrayToBase64(bytes) };
+}
+
 // ==================== 服务函数 ====================
 
 /**
@@ -62,6 +185,16 @@ interface TestConnectionResult {
  */
 function isTauriEnvironment(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** 字节 → base64（分块拼接，避免 String.fromCharCode 展开超长参数列表） */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
 }
 
 /**

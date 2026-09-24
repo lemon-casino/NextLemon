@@ -13,11 +13,13 @@ import {
   Tag,
   Trash2,
   Type,
+  Wand2,
   X,
 } from "lucide-react";
 import { useCreativeStore } from "@/stores/creativeStore";
 import { toast } from "@/stores/toastStore";
 import { formatFileSize, isTauriEnvironment } from "@/services/fileStorageService";
+import { ImageDetailModal } from "@/components/creative/ImageDetailModal";
 import {
   CREATIVE_ASSET_KIND_LABELS,
   CREATIVE_ASSET_SOURCE_LABELS,
@@ -62,6 +64,7 @@ export function CreativeAssetLibrary({
   const [sourceFilter, setSourceFilter] = useState<AssetSourceFilter>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
   const [cleanupRunning, setCleanupRunning] = useState(false);
 
   const tags = useMemo(
@@ -102,6 +105,11 @@ export function CreativeAssetLibrary({
   const previewAsset = useMemo(
     () => assets.find((asset) => asset.id === previewAssetId) || null,
     [assets, previewAssetId]
+  );
+
+  const editingAsset = useMemo(
+    () => assets.find((asset) => asset.id === editingAssetId) || null,
+    [assets, editingAssetId]
   );
 
   const handleDelete = (asset: CreativeAsset) => {
@@ -268,6 +276,21 @@ export function CreativeAssetLibrary({
           onDelete={() => handleDelete(previewAsset)}
           onDownload={() => void handleDownload(previewAsset)}
           onSave={(input) => handleSaveMetadata(previewAsset, input)}
+          onEdit={
+            previewAsset.kind === "image"
+              ? () => {
+                  setPreviewAssetId(null);
+                  setEditingAssetId(previewAsset.id);
+                }
+              : undefined
+          }
+        />
+      )}
+
+      {editingAsset && (
+        <ImageDetailModal
+          asset={editingAsset}
+          onClose={() => setEditingAssetId(null)}
         />
       )}
     </div>
@@ -419,12 +442,14 @@ function CreativeAssetPreviewModal({
   onDelete,
   onDownload,
   onSave,
+  onEdit,
 }: {
   asset: CreativeAsset;
   onClose: () => void;
   onDelete: () => void;
   onDownload: () => void;
   onSave: (input: AssetMetadataInput) => void;
+  onEdit?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [input, setInput] = useState<AssetMetadataInput>({
@@ -454,6 +479,12 @@ function CreativeAssetPreviewModal({
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {onEdit && (
+              <button className="btn btn-primary btn-sm gap-1" title="编辑图片（裁剪/旋转/九宫格/放大/反推词/局部重绘）" onClick={onEdit}>
+                <Wand2 className="h-4 w-4" />
+                编辑图片
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm btn-circle" title="下载" onClick={onDownload}>
               <Download className="h-4 w-4" />
             </button>

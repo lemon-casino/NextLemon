@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { Check, Code2, Download, Eye, ShieldCheck, Trash2, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Check, Code2, Copy, Download, Eye, Radio, RefreshCw, Save, ShieldCheck, Trash2, Upload } from "lucide-react";
 import {
   getLocalAgentBridgeConfigBundle,
   getLocalAgentMcpManifest,
@@ -8,9 +8,27 @@ import {
   readLocalAgentBridgeSnapshot,
   requestLocalAgentBridgeApproval,
 } from "@/services/localAgentBridge";
+import {
+  buildBridgeStartCommand,
+  getRealtimeBridgeStatusSnapshot,
+  isBridgeTokenSafe,
+  maskBridgeToken,
+  restartRealtimeBridge,
+  saveRealtimeBridgeConfig,
+  subscribeRealtimeBridgeStatus,
+  type RealtimeBridgeConnectionStatus,
+} from "@/services/agentRealtimeBridge";
 import { useLocalAgentBridgeStore } from "@/stores/localAgentBridgeStore";
 import { toast } from "@/stores/toastStore";
 import type { CanvasAgentOp } from "@/types/creative";
+
+const REALTIME_STATUS_LABELS: Record<RealtimeBridgeConnectionStatus, { label: string; badge: string }> = {
+  disabled: { label: "未连接", badge: "badge-outline" },
+  connecting: { label: "连接中", badge: "badge-info" },
+  connected: { label: "已连接", badge: "badge-success" },
+  reconnecting: { label: "重连中", badge: "badge-warning" },
+  error: { label: "错误", badge: "badge-error" },
+};
 
 export function LocalAgentBridgePanel() {
   const approvalFileInputRef = useRef<HTMLInputElement>(null);
@@ -25,6 +43,16 @@ export function LocalAgentBridgePanel() {
   const setAllowWriteRequests = useLocalAgentBridgeStore((state) => state.setAllowWriteRequests);
   const clearAuditLog = useLocalAgentBridgeStore((state) => state.clearAuditLog);
   const [snapshotSummary, setSnapshotSummary] = useState("");
+  const realtime = useSyncExternalStore(subscribeRealtimeBridgeStatus, getRealtimeBridgeStatusSnapshot);
+  const realtimeStatus = REALTIME_STATUS_LABELS[realtime.status];
+  // 实时桥端口/token 编辑草稿：初值取当前配置，配置变化（保存/重连）后同步。
+  const [realtimeDraftPort, setRealtimeDraftPort] = useState(() => String(realtime.config.port));
+  const [realtimeDraftToken, setRealtimeDraftToken] = useState(() => realtime.config.token);
+
+  useEffect(() => {
+    setRealtimeDraftPort(String(realtime.config.port));
+    setRealtimeDraftToken(realtime.config.token);
+  }, [realtime.config]);
 
   const statusLabel = useMemo(() => {
     if (!enabled) return "关闭";
@@ -67,6 +95,45 @@ export function LocalAgentBridgePanel() {
   const handleExportManifest = () => {
     downloadJson("nextlemon-local-agent-mcp-manifest.json", getLocalAgentMcpManifest());
     toast.success("MCP 工具清单已导出");
+  };
+
+  const handleCopyBridgeStartCommand = async () => {
+    const command = buildBridgeStartCommand(realtime.config);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(command);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = command;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      toast.success("实时桥启动命令已复制");
+    } catch (error) {
+      toast.error(`复制失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    }
+  };
+
+  const handleToggleRealtime = (autoConnect: boolean) => {
+    saveRealtimeBridgeConfig({ autoConnect });
+    toast.info(autoConnect ? "实时桥将在桥启用时自动连接" : "实时桥已停用");
+  };
+
+  const handleSaveRealtimeConfig = () => {
+    const port = Number(realtimeDraftPort.trim());
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      toast.error("实时桥端口必须是 1-65535 的整数");
+      return;
+    }
+    const token = realtimeDraftToken.trim();
+    if (!isBridgeTokenSafe(token)) {
+      toast.error("token 不能为空，且不能包含空白或引号");
+      return;
+    }
+    saveRealtimeBridgeConfig({ port, token });
+    toast.success("实时桥配置已保存，将按新配置重连");
   };
 
   const handleExportConfigBundle = () => {
@@ -169,6 +236,77 @@ export function LocalAgentBridgePanel() {
           {lastWriteRequestAt && <div>写入：{new Date(lastWriteRequestAt).toLocaleTimeString()}</div>}
           {lastError && <div className="text-error">错误：{lastError}</div>}
           {snapshotSummary && <div className="mt-1 text-base-content/70">{snapshotSummary}</div>}
+        </div>
+
+        <div className="rounded-md border border-base-300 p-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-base-content/55">
+              <Radio className="h-3 w-3" />
+              实时桥（SSE）
+            </span>
+            <span className={`badge badge-xs ${realtimeStatus.badge}`}>{realtimeStatus.label}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-base-content/55">
+            <span>端口：{realtime.config.port}</span>
+            <span>token：{maskBridgeToken(realtime.config.token)}</span>
+            {realtime.attempt > 0 && <span>重试：{realtime.attempt} 次</span>}
+            {realtime.lastError && <span className="text-error">{realtime.lastError}</span>}
+          </div>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="flex items-center gap-1 text-[11px] text-base-content/55">
+              端口
+              <input
+                className="input input-bordered input-xs w-20"
+                value={realtimeDraftPort}
+                onChange={(event) => setRealtimeDraftPort(event.target.value)}
+                placeholder="8765"
+              />
+            </label>
+            <label className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-base-content/55">
+              token
+              <input
+                className="input input-bordered input-xs w-full font-mono"
+                value={realtimeDraftToken}
+                onChange={(event) => setRealtimeDraftToken(event.target.value)}
+                placeholder="粘贴 hub 启动时打印的 token"
+              />
+            </label>
+            <button
+              className="btn btn-ghost btn-xs gap-1"
+              title="保存端口/token 并按新配置重连"
+              onClick={handleSaveRealtimeConfig}
+            >
+              <Save className="h-3.5 w-3.5" />
+              保存
+            </button>
+          </div>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <label className="flex items-center gap-2 rounded-lg border border-base-300 p-2 text-xs">
+              <input
+                className="toggle toggle-primary toggle-xs"
+                type="checkbox"
+                checked={realtime.config.autoConnect}
+                onChange={(event) => handleToggleRealtime(event.target.checked)}
+              />
+              自动连接
+            </label>
+            <button
+              className="btn btn-ghost btn-xs gap-1"
+              title={`复制启动命令：${buildBridgeStartCommand(realtime.config)}`}
+              onClick={() => void handleCopyBridgeStartCommand()}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              启动命令
+            </button>
+            <button className="btn btn-ghost btn-xs gap-1" onClick={restartRealtimeBridge}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              重连
+            </button>
+          </div>
+          <div className="mt-1 text-[10px] text-base-content/40">
+            零依赖本地 hub：npm run bridge:local（仅绑定 127.0.0.1，写操作仍走审批队列）；
+            未指定 --token 时 hub 会生成随机 token 并只在启动日志打印一次，粘贴到上方保存即可。
+          </div>
         </div>
 
         <div className="space-y-1">

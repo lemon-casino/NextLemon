@@ -11,10 +11,12 @@ import {
   Link2,
   MessageCircleQuestion,
   Pencil,
+  Pin,
   Play,
   RefreshCw,
   Send,
   Settings2,
+  Sparkles,
   Trash2,
   Undo2,
   Wrench,
@@ -31,6 +33,20 @@ import {
   type CanvasAgentToolName,
 } from "@/services/canvasAgentRuntime";
 import { agentOpLabel, summarizeAgentOps } from "@/services/agentOps";
+import {
+  buildMuApiSessionSnapshotPayload,
+  getEngineExecutablePath,
+  getEngineSessionId,
+  getLocalEngineMode,
+  mapSkillInputs,
+  normalizeAgentSkills,
+  resolveAgentEngineCwd,
+  startAgentEngineTurn,
+  type AgentEngineId,
+  type AgentEngineParsedEvent,
+  type AgentEngineTurnHandle,
+  type AgentSkillSummary,
+} from "@/services/agentEngines";
 import {
   answerAgentAskUser,
   getPendingAskUser,
@@ -63,7 +79,9 @@ import {
 import {
   approveMuApiJob,
   cancelMuApiJob,
+  createMuApiClient,
   createMuApiAgentProvider,
+  mapMuApiEvents,
   rejectMuApiJob,
   sendMuApiMessage,
   verifyMuApiConnection,
@@ -79,6 +97,7 @@ import type {
   AgentProviderConfig,
   AgentProviderKind,
   AgentSession,
+  LocalAgentEngineMode,
 } from "@/types/agent";
 import type { CanvasAgentOp, DesignPlan, DesignPlanStep } from "@/types/creative";
 
@@ -115,6 +134,34 @@ export function AgentPanel() {
   const [toolArgs, setToolArgs] = useState(() => JSON.stringify(selectedTool.exampleArgs, null, 2));
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  // Skills 专家工作流：muapi 技能列表 + 钉选中的技能名
+  const [agentSkills, setAgentSkills] = useState<AgentSkillSummary[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [pinnedSkillName, setPinnedSkillName] = useState<string | null>(null);
+  // 引擎回合进行中的句柄（按会话 id），取消会话时用于 kill 子进程
+  const engineTurnHandlesRef = useRef<Map<string, AgentEngineTurnHandle>>(new Map());
+  // 快照回写去重：同一会话的同一终态只尝试一次
+  const snapshotSyncAttemptedRef = useRef<Set<string>>(new Set());
+  // 卸载清理：面板被侧栏切换卸载时停止所有进行中的引擎子进程（kill + 注销监听），
+  // 避免孤儿进程与事件监听器滞留；对应会话状态收敛为 failed，不再永久卡在 running。
+  useEffect(() => {
+    const handles = engineTurnHandlesRef.current;
+    return () => {
+      handles.forEach((handle, sessionId) => {
+        void handle.stop();
+        appendEvent(sessionId, {
+          id: crypto.randomUUID(),
+          type: "error",
+          sessionId,
+          message: "面板已关闭，进行中的引擎回合已中止",
+          createdAt: Date.now(),
+        });
+        useAgentStore.getState().setSessionStatus(sessionId, "failed");
+      });
+      handles.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) || null,
@@ -127,6 +174,13 @@ export function AgentPanel() {
   const activePlan = activeSession ? getSessionDesignPlan(activeSession) : null;
 
   const selectedProviderConfig = providerConfigs[selectedProviderKind];
+  // 本地 Provider 当前引擎模式（本地规则 / 真实模型工具循环 / Codex / Claude Code）
+  const localEngineMode = getLocalEngineMode(providerConfigs.local);
+  // 钉选中的技能（Skills 专家工作流）
+  const pinnedSkill = useMemo(
+    () => (pinnedSkillName ? agentSkills.find((skill) => skill.name === pinnedSkillName) || null : null),
+    [agentSkills, pinnedSkillName]
+  );
 
   const createSelectedProviderSession = async () => {
     if (selectedProviderKind === "muapi") {
@@ -169,7 +223,15 @@ export function AgentPanel() {
     const pendingAsk =
       session.providerKind === "local" ? getPendingAskUser(session.id) : null;
     if (session.providerKind === "muapi") {
-      await sendMuApiContent(session, content);
+      // 钉选了技能时按 Skills 专家工作流走 runSkill 端点，而不是普通 chat
+      const skill = pinnedSkill && pinnedSkill.enabled ? pinnedSkill : null;
+      if (skill) {
+        await sendMuApiSkillRun(session, skill, content);
+      } else {
+        await sendMuApiContent(session, content);
+      }
+    } else if (localEngineMode === "codex" || localEngineMode === "claude-code") {
+      await runEngineTurn(session, content, localEngineMode);
     } else if (pendingAsk) {
       const modelConfig = resolveAgentModelConfig(providerConfigs.local);
       if (!modelConfig) {
@@ -263,6 +325,12 @@ export function AgentPanel() {
       void cancelRemoteJob(activeSession);
       return;
     }
+    // 双引擎回合进行中：先 kill 引擎子进程再取消本地会话
+    const engineHandle = engineTurnHandlesRef.current.get(activeSession.id);
+    if (engineHandle) {
+      engineTurnHandlesRef.current.delete(activeSession.id);
+      void engineHandle.stop();
+    }
     cancelSession(activeSession.id);
     toast.info("Agent 会话已取消");
   };
@@ -283,6 +351,9 @@ export function AgentPanel() {
   };
 
   const muApiConfigured = isMuApiConfigured(providerConfigs.muapi);
+  // 标量化配置值：供 Skills 拉取 effect 作为依赖，避免 providerConfigs 引用抖动触发请求风暴
+  const muApiBaseUrl = providerConfigs.muapi.baseUrl || "";
+  const muApiKey = providerConfigs.muapi.apiKey || "";
   const activeSessionIsMuApi = activeSession?.providerKind === "muapi";
   const activeSessionJobPending = Boolean(
     activeSession && activeSessionIsMuApi && shouldPollMuApiSessionJob(activeSession)
@@ -313,6 +384,239 @@ export function AgentPanel() {
     void recoverMuApiSessionJobs(sessionId, remoteSessionId, providerConfigs.muapi);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession?.id, activeSessionIsMuApi, _hasHydrated, muApiConfigured]);
+
+  // Skills 专家工作流：muapi 已配置且当前面向 muapi 时拉取技能列表，供输入区上方钉选。
+  // 依赖收敛为 baseUrl/apiKey 标量：配置表单每个按键都会产生新 providerConfigs 引用，
+  // 若依赖整个对象会引发 listAgentSkills 请求风暴。
+  useEffect(() => {
+    if (!muApiConfigured || (selectedProviderKind !== "muapi" && !activeSessionIsMuApi)) return;
+    let cancelled = false;
+    setSkillsLoading(true);
+    const client = createMuApiClient({
+      kind: "muapi",
+      enabled: true,
+      name: "MuAPI Provider",
+      baseUrl: muApiBaseUrl || undefined,
+      apiKey: muApiKey || undefined,
+    });
+    client
+      .listAgentSkills()
+      .then((raw) => {
+        if (!cancelled) setAgentSkills(normalizeAgentSkills(raw));
+      })
+      .catch(() => {
+        // 技能拉取失败静默降级：不展示 chips，也不打断普通 chat 流程
+        if (!cancelled) setAgentSkills([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSkillsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionIsMuApi, muApiBaseUrl, muApiKey, muApiConfigured, selectedProviderKind]);
+
+  // 会话快照回写服务端：muapi 会话任务到达终态后调用 updateSession（PATCH）回写消息快照；
+  // 失败静默记入事件流，不打断 UI，也不重复重试。
+  useEffect(() => {
+    const session = activeSession;
+    if (!session || !activeSessionIsMuApi || !muApiConfigured) return;
+    if (!isMuApiSessionJobSettled(session)) return;
+    const remoteSessionId = getRemoteSessionId(session);
+    if (!remoteSessionId) return;
+    if (session.metadata?.snapshotSyncedAt) return;
+    if (snapshotSyncAttemptedRef.current.has(session.id)) return;
+    snapshotSyncAttemptedRef.current.add(session.id);
+    void syncSessionSnapshotToServer(session.id, remoteSessionId);
+    // providerConfigs.muapi 变化产生新引用时重新评估回写条件
+  }, [activeSession, activeSessionIsMuApi, muApiConfigured, providerConfigs.muapi]);
+
+  // 双引擎回合：经 spawn_agent_process 启动 CLI 子进程，按行解析引擎输出映射为 Agent 事件。
+  const runEngineTurn = async (session: AgentSession, prompt: string, engine: AgentEngineId) => {
+    const config = providerConfigs.local;
+    const fallbackCwd = typeof config.metadata?.engineCwd === "string" ? config.metadata.engineCwd : "";
+    // 同一会话已有回合进行中：拒绝重复提交，避免覆盖旧 handle 导致旧子进程无法从 UI 停止
+    if (engineTurnHandlesRef.current.has(session.id)) {
+      toast.warning("当前会话已有引擎回合进行中，请等待完成或先取消");
+      return;
+    }
+    try {
+      const cwd = await resolveAgentEngineCwd(session, fallbackCwd);
+      if (!cwd) {
+        toast.error("无法确定引擎工作目录，请先在 Local Provider 设置中填写");
+        return;
+      }
+      setSessionStatus(session.id, "running");
+      const handle = await startAgentEngineTurn({
+        engine,
+        prompt,
+        cwd,
+        executablePath: getEngineExecutablePath(config, engine),
+        engineSessionId: getEngineSessionId(session),
+        model: config.model,
+        onEvent: (parsed) => applyEngineParsedEvent(session.id, parsed),
+      });
+      engineTurnHandlesRef.current.set(session.id, handle);
+      // 线程绑定工作目录与引擎会话 id（供恢复列出并续聊）
+      updateSessionMetadata(session.id, { engine, engineCwd: cwd, engineProcessId: handle.processId });
+      toast.info(`${engine === "codex" ? "Codex" : "Claude Code"} 引擎已启动`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      appendEvent(session.id, {
+        id: crypto.randomUUID(),
+        type: "error",
+        sessionId: session.id,
+        message: `引擎启动失败: ${message}`,
+        createdAt: Date.now(),
+      });
+      setSessionStatus(session.id, "failed");
+      toast.error(`引擎启动失败: ${message}`);
+    }
+  };
+
+  const applyEngineParsedEvent = (sessionId: string, parsed: AgentEngineParsedEvent) => {
+    switch (parsed.kind) {
+      case "engine_session":
+        updateSessionMetadata(sessionId, { engineSessionId: parsed.engineSessionId });
+        return;
+      case "text":
+        appendEvent(sessionId, {
+          id: crypto.randomUUID(),
+          type: "text",
+          sessionId,
+          content: parsed.content,
+          createdAt: Date.now(),
+        });
+        return;
+      case "tool_call":
+        appendEvent(sessionId, {
+          id: crypto.randomUUID(),
+          type: "tool_call",
+          sessionId,
+          toolName: parsed.toolName,
+          args: parsed.args,
+          write: true,
+          createdAt: Date.now(),
+        });
+        return;
+      case "tool_result":
+        appendEvent(sessionId, {
+          id: crypto.randomUUID(),
+          type: "tool_result",
+          sessionId,
+          toolName: parsed.toolName,
+          ok: parsed.ok,
+          result: parsed.result,
+          error: parsed.error,
+          createdAt: Date.now(),
+        });
+        return;
+      case "error":
+        appendEvent(sessionId, {
+          id: crypto.randomUUID(),
+          type: "error",
+          sessionId,
+          message: parsed.message,
+          createdAt: Date.now(),
+        });
+        setSessionStatus(sessionId, "failed");
+        return;
+      case "raw":
+        appendEvent(sessionId, {
+          id: crypto.randomUUID(),
+          type: "text",
+          sessionId,
+          content: parsed.content,
+          createdAt: Date.now(),
+        });
+        return;
+      case "done":
+        setSessionStatus(sessionId, "completed");
+        engineTurnHandlesRef.current.get(sessionId)?.stop().then(() => {
+          engineTurnHandlesRef.current.delete(sessionId);
+        });
+        return;
+    }
+  };
+
+  // Skills 专家工作流：钉选技能后一句话发起，自动映射必填输入并切换 runSkill 端点。
+  const sendMuApiSkillRun = async (session: AgentSession, skill: AgentSkillSummary, content: string) => {
+    if (!isMuApiConfigured(providerConfigs.muapi)) {
+      toast.error("MuAPI 未配置，已保留本地会话消息");
+      return;
+    }
+
+    setSessionStatus(session.id, "running");
+    try {
+      const client = createMuApiClient(providerConfigs.muapi);
+      const freshSession = useAgentStore.getState().sessions.find((item) => item.id === session.id) || session;
+      const remoteSessionId =
+        getRemoteSessionId(freshSession) || (await client.createSession({ name: freshSession.title })).id;
+      const assignment = mapSkillInputs(skill, content);
+      if (assignment.unfilled.length > 0) {
+        toast.warning(`技能「${skill.title}」缺少必填输入：${assignment.unfilled.join("、")}，已留空提交`);
+      }
+      const response = await client.runSkill(remoteSessionId, {
+        skill_name: skill.name,
+        inputs: assignment.inputs,
+        messages_snapshot: freshSession.messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+          timestamp: new Date(message.createdAt).toISOString(),
+        })),
+        model: providerConfigs.muapi.model || "gpt-4o",
+      });
+      const remoteJobId = extractRemoteJobId(response);
+      const events = mapMuApiEvents(response, session.id, remoteJobId);
+      updateSessionMetadata(session.id, {
+        remoteSessionId,
+        ...(remoteJobId ? { remoteJobId } : {}),
+        lastMuApiResponse: response,
+      });
+      events.forEach((event) => appendEvent(session.id, event));
+      setSessionStatus(
+        session.id,
+        events.some((event) => event.type === "approval_required") ? "awaiting_approval" : "idle"
+      );
+      toast.success(`技能「${skill.title}」已提交`);
+    } catch (error) {
+      appendEvent(session.id, {
+        id: crypto.randomUUID(),
+        type: "error",
+        sessionId: session.id,
+        message: error instanceof Error ? error.message : "MuAPI runSkill 请求失败",
+        createdAt: Date.now(),
+      });
+      setSessionStatus(session.id, "failed");
+      toast.error(`技能执行失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    }
+  };
+
+  const syncSessionSnapshotToServer = async (sessionId: string, remoteSessionId: string) => {
+    const session = useAgentStore.getState().sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    try {
+      await createMuApiClient(providerConfigs.muapi).updateSession(
+        remoteSessionId,
+        buildMuApiSessionSnapshotPayload(session)
+      );
+      updateSessionMetadata(sessionId, { snapshotSyncedAt: Date.now(), snapshotSyncError: null });
+    } catch (error) {
+      // 失败静默记入事件流，不打断 UI
+      const message = error instanceof Error ? error.message : "未知错误";
+      updateSessionMetadata(sessionId, { snapshotSyncError: message });
+      appendEvent(sessionId, {
+        id: crypto.randomUUID(),
+        type: "tool_result",
+        sessionId,
+        toolName: "muapi.snapshotSync",
+        ok: false,
+        error: message,
+        createdAt: Date.now(),
+      });
+    }
+  };
 
   const sendMuApiContent = async (session: AgentSession, content: string) => {
     if (!isMuApiConfigured(providerConfigs.muapi)) {
@@ -544,7 +848,7 @@ export function AgentPanel() {
           />
         )}
         {selectedProviderKind === "local" && (
-          <LocalModelLoopForm
+          <LocalEngineForm
             config={selectedProviderConfig}
             onChange={(patch) => setProviderConfig("local", patch)}
           />
@@ -715,10 +1019,37 @@ export function AgentPanel() {
             onChange={(event) => setToolArgs(event.target.value)}
           />
         </div>
+        {muApiConfigured && (agentSkills.length > 0 || skillsLoading) && (
+          <div className="mb-2 flex flex-wrap items-center gap-1">
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-base-content/45">
+              <Sparkles className="h-3.5 w-3.5" />
+              Skills
+            </span>
+            {skillsLoading && <span className="text-[11px] text-base-content/40">加载中…</span>}
+            {agentSkills.map((skill) => {
+              const pinned = pinnedSkillName === skill.name;
+              return (
+                <button
+                  key={skill.name}
+                  className={`btn btn-xs gap-1 rounded-full ${pinned ? "btn-secondary" : "btn-ghost border border-base-300"}`}
+                  title={skill.description || skill.name}
+                  onClick={() => setPinnedSkillName(pinned ? null : skill.name)}
+                >
+                  <Pin className={`h-3 w-3 ${pinned ? "fill-current" : "opacity-40"}`} />
+                  <span className="max-w-32 truncate">{skill.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="flex gap-2">
           <textarea
             className="textarea textarea-bordered min-h-16 flex-1 resize-none text-sm"
-            placeholder="输入 brief 生成设计计划，或输入工具 JSON..."
+            placeholder={
+              pinnedSkill
+                ? `一句话发起技能「${pinnedSkill.title}」，必填输入将自动映射…`
+                : "输入 brief 生成设计计划，或输入工具 JSON..."
+            }
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
@@ -737,34 +1068,59 @@ export function AgentPanel() {
   );
 }
 
-function LocalModelLoopForm({
+// Local Provider 引擎配置：本地规则 / 真实模型工具循环 / Codex CLI / Claude Code CLI。
+function LocalEngineForm({
   config,
   onChange,
 }: {
   config: AgentProviderConfig;
   onChange: (patch: Partial<AgentProviderConfig>) => void;
 }) {
-  const loopEnabled = config.metadata?.modelToolLoop === true;
+  const engineMode = getLocalEngineMode(config);
+  const modes: Array<{ value: LocalAgentEngineMode; label: string }> = [
+    { value: "rules", label: "本地规则" },
+    { value: "model-loop", label: "真实模型工具循环" },
+    { value: "codex", label: "Codex CLI" },
+    { value: "claude-code", label: "Claude Code CLI" },
+  ];
+  const engineHints: Record<LocalAgentEngineMode, string> = {
+    rules: "本地规则路由：自然语言 brief 生成设计计划，工具走手工 JSON 调用，不依赖外部模型。",
+    "model-loop":
+      "自然语言通过 LLM function calling 循环驱动受控工具（OpenAI 兼容协议，默认走 Lemon API）；写操作仍需审批，校验失败原因会回传给模型自我修正。",
+    codex: "经本地 Codex CLI（codex exec --json）驱动真实模型工具循环，引擎输出按行解析为事件；会话线程绑定工作目录。",
+    "claude-code":
+      "经本地 Claude Code CLI（--output-format stream-json）驱动真实模型工具循环，引擎输出按行解析为事件；会话线程绑定工作目录。",
+  };
+  const engineId: AgentEngineId | null = engineMode === "codex" ? "codex" : engineMode === "claude-code" ? "claude-code" : null;
+
+  const changeEngine = (mode: LocalAgentEngineMode) => {
+    // 同步写入 modelToolLoop，保持旧数据向后兼容
+    onChange({
+      metadata: { ...config.metadata, engine: mode, modelToolLoop: mode === "model-loop" },
+    });
+  };
 
   return (
     <div className="mt-3 rounded-lg border border-base-300 bg-base-100 p-3">
-      <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold">
-        <input
-          type="checkbox"
-          className="toggle toggle-xs"
-          checked={loopEnabled}
-          onChange={(event) =>
-            onChange({
-              metadata: { ...config.metadata, modelToolLoop: event.target.checked },
-            })
-          }
-        />
-        真实模型工具调用
-      </label>
-      <p className="mt-1 text-[11px] text-base-content/45">
-        启用后自然语言会通过 LLM function calling 循环驱动受控工具（OpenAI 兼容协议，默认走 Lemon API）；写操作仍需审批，校验失败原因会回传给模型自我修正。关闭时保持本地规则路由。
-      </p>
-      {loopEnabled && (
+      <div className="mb-2 text-xs font-semibold">引擎</div>
+      <div className="grid grid-cols-2 gap-1">
+        {modes.map((mode) => (
+          <button
+            key={mode.value}
+            className={`rounded-md border px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
+              engineMode === mode.value
+                ? "border-primary/30 bg-primary/5 text-primary"
+                : "border-base-300 text-base-content/55"
+            }`}
+            onClick={() => changeEngine(mode.value)}
+          >
+            {mode.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] text-base-content/45">{engineHints[engineMode]}</p>
+
+      {engineMode === "model-loop" && (
         <div className="mt-2 space-y-2">
           <input
             className="input input-bordered input-xs w-full"
@@ -785,9 +1141,77 @@ function LocalModelLoopForm({
             value={config.apiKey || ""}
             onChange={(event) => onChange({ apiKey: event.target.value })}
           />
+          <SessionOnlyKeyToggle config={config} onChange={onChange} />
+        </div>
+      )}
+
+      {engineId && (
+        <div className="mt-2 space-y-2">
+          <input
+            className="input input-bordered input-xs w-full"
+            placeholder={
+              engineId === "codex"
+                ? "Codex 可执行文件路径（默认 PATH 上的 codex）"
+                : "Claude Code 可执行文件路径（默认 PATH 上的 claude）"
+            }
+            value={getEngineExecutablePath(config, engineId)}
+            onChange={(event) =>
+              onChange({
+                metadata: {
+                  ...config.metadata,
+                  [engineId === "codex" ? "codexPath" : "claudeCodePath"]: event.target.value,
+                },
+              })
+            }
+          />
+          <p className="text-[11px] text-base-content/40">
+            Windows 提示：npm 全局安装的启动 shim 是 .cmd，建议填写完整可执行文件路径（如 …\codex.cmd）。
+          </p>
+          <input
+            className="input input-bordered input-xs w-full"
+            placeholder="引擎工作目录（默认用户主目录；会话首次运行后绑定）"
+            value={typeof config.metadata?.engineCwd === "string" ? config.metadata.engineCwd : ""}
+            onChange={(event) =>
+              onChange({ metadata: { ...config.metadata, engineCwd: event.target.value } })
+            }
+          />
+          <input
+            className="input input-bordered input-xs w-full"
+            placeholder="模型名（可选，经 --model 透传）"
+            value={config.model || ""}
+            onChange={(event) => onChange({ model: event.target.value })}
+          />
         </div>
       )}
     </div>
+  );
+}
+
+// 「仅本会话保存」：勾选后 apiKey 不进 agentStore partialize 持久化（内存保留，刷新即清）。
+function SessionOnlyKeyToggle({
+  config,
+  onChange,
+}: {
+  config: AgentProviderConfig;
+  onChange: (patch: Partial<AgentProviderConfig>) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-2 rounded-md border border-base-300 px-2 py-1.5 text-[11px]">
+      <span>
+        仅本会话保存 API Key
+        <span className="ml-1 text-base-content/40">不写入本地存储，刷新即清</span>
+      </span>
+      <input
+        type="checkbox"
+        className="toggle toggle-xs"
+        checked={config.metadata?.sessionOnlyApiKey === true}
+        onChange={(event) =>
+          onChange({
+            metadata: { ...config.metadata, sessionOnlyApiKey: event.target.checked },
+          })
+        }
+      />
+    </label>
   );
 }
 
@@ -977,6 +1401,7 @@ function MuApiConfigForm({
           onChange={(event) => onChange({ apiKey: event.target.value })}
         />
       </label>
+      <SessionOnlyKeyToggle config={config} onChange={onChange} />
       <input
         className="input input-bordered input-xs w-full"
         placeholder="模型，例如 gpt-4o"
@@ -1476,6 +1901,18 @@ function downloadJson(fileName: string, value: unknown) {
 
 function isMuApiConfigured(config: AgentProviderConfig) {
   return Boolean((config.baseUrl || "https://api.muapi.ai").trim() && config.apiKey?.trim());
+}
+
+// 从 runSkill / chat 响应中宽松提取远端 job id（job_id / jobId / job.id）
+function extractRemoteJobId(value: unknown): string {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const job = record.job && typeof record.job === "object" && !Array.isArray(record.job)
+    ? (record.job as Record<string, unknown>)
+    : {};
+  for (const candidate of [record.job_id, record.jobId, job.id]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return "";
 }
 
 function getRemoteJobStatus(session: AgentSession) {

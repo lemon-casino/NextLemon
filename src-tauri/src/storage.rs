@@ -100,6 +100,35 @@ fn get_cache_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(cache_dir)
 }
 
+// 净化 canvas_id：拒绝空、路径分隔符、..、空字符，防止路径注入
+fn sanitize_canvas_id(canvas_id: &str) -> Result<String, String> {
+    if canvas_id.is_empty() {
+        return Err("canvas_id 不能为空".to_string());
+    }
+    if canvas_id.contains('\0') {
+        return Err("canvas_id 包含非法字符".to_string());
+    }
+    if canvas_id.contains('/') || canvas_id.contains('\\') {
+        return Err("canvas_id 不能包含路径分隔符".to_string());
+    }
+    if canvas_id == "." || canvas_id == ".." {
+        return Err("canvas_id 不能为相对路径".to_string());
+    }
+    Ok(canvas_id.to_string())
+}
+
+// 拒绝包含「..」分量的路径：starts_with 按分量比较且不解析 ParentDir，
+// 不拦截的话 "<白名单>\\..\\..<目标>" 会绕过目录白名单（不用 canonicalize，Windows 会产生 \\?\ 前缀导致误拒）
+fn reject_parent_dir(target: &std::path::Path) -> Result<(), String> {
+    if target
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return Err("路径不允许包含 ..".to_string());
+    }
+    Ok(())
+}
+
 // 保存图片（从 base64）- 同时保存元数据
 #[tauri::command]
 pub fn save_image(
@@ -115,6 +144,7 @@ pub fn save_image(
 
     // 根据 canvas_id 创建子目录
     let target_dir = if let Some(ref cid) = canvas_id {
+        sanitize_canvas_id(cid)?;
         let canvas_dir = images_dir.join(cid);
         if !canvas_dir.exists() {
             fs::create_dir_all(&canvas_dir).map_err(|e| format!("创建画布目录失败: {}", e))?;
@@ -174,22 +204,35 @@ pub fn save_image(
     })
 }
 
-// 读取图片（返回 base64）
+// 读取图片（返回 base64）- 仅允许读取应用数据目录内的文件，防止任意路径读取
 #[tauri::command]
-pub fn read_image(path: String) -> Result<String, String> {
-    let data = fs::read(&path).map_err(|e| format!("读取文件失败: {}", e))?;
+pub fn read_image(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let target = std::path::Path::new(&path);
+    reject_parent_dir(target)?;
+    if !target.starts_with(&app_data) {
+        return Err("只允许读取应用数据目录内的文件".to_string());
+    }
+    let data = fs::read(target).map_err(|e| format!("读取文件失败: {}", e))?;
     Ok(general_purpose::STANDARD.encode(&data))
 }
 
-// 删除图片
+// 删除图片 - 仅允许删除应用数据目录内的文件，防止任意路径删除
 #[tauri::command]
-pub fn delete_image(path: String) -> Result<(), String> {
-    fs::remove_file(&path).map_err(|e| format!("删除文件失败: {}", e))
+pub fn delete_image(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let target = std::path::Path::new(&path);
+    reject_parent_dir(target)?;
+    if !target.starts_with(&app_data) {
+        return Err("只允许删除应用数据目录内的文件".to_string());
+    }
+    fs::remove_file(target).map_err(|e| format!("删除文件失败: {}", e))
 }
 
 // 删除画布的所有图片
 #[tauri::command]
 pub fn delete_canvas_images(app: tauri::AppHandle, canvas_id: String) -> Result<u64, String> {
+    sanitize_canvas_id(&canvas_id)?;
     let images_dir = get_images_dir(&app)?;
     let canvas_dir = images_dir.join(&canvas_id);
 
@@ -339,6 +382,7 @@ pub fn list_canvas_images(
     app: tauri::AppHandle,
     canvas_id: String,
 ) -> Result<Vec<ImageInfoWithMetadata>, String> {
+    sanitize_canvas_id(&canvas_id)?;
     let images_dir = get_images_dir(&app)?;
     let canvas_dir = images_dir.join(&canvas_id);
 
@@ -582,8 +626,79 @@ pub fn list_media_files(app: tauri::AppHandle) -> Result<Vec<MediaFileInfo>, Str
 pub fn delete_media_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let media_dir = get_media_dir(&app)?;
     let target = std::path::Path::new(&path);
+    reject_parent_dir(target)?;
     if !target.starts_with(&media_dir) {
         return Err("只允许删除媒体目录内的文件".to_string());
     }
     fs::remove_file(target).map_err(|e| format!("删除文件失败: {}", e))
+}
+
+// 媒体文件内容（base64）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MediaFileContent {
+    pub base64: String,
+}
+
+// 读取媒体文件（仅允许读取媒体目录内的文件，返回 base64，供媒体同步等场景使用）
+#[tauri::command]
+pub fn read_media_file(app: tauri::AppHandle, path: String) -> Result<MediaFileContent, String> {
+    let media_dir = get_media_dir(&app)?;
+    let target = std::path::Path::new(&path);
+    reject_parent_dir(target)?;
+    if !target.starts_with(&media_dir) {
+        return Err("只允许读取媒体目录内的文件".to_string());
+    }
+    let data = fs::read(target).map_err(|e| format!("读取文件失败: {}", e))?;
+    Ok(MediaFileContent {
+        base64: general_purpose::STANDARD.encode(&data),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reject_parent_dir;
+    use super::sanitize_canvas_id;
+
+    #[test]
+    fn canvas_id_rejects_empty() {
+        assert!(sanitize_canvas_id("").is_err());
+    }
+
+    #[test]
+    fn canvas_id_rejects_path_separators() {
+        assert!(sanitize_canvas_id("a/b").is_err());
+        assert!(sanitize_canvas_id("a\\b").is_err());
+    }
+
+    #[test]
+    fn canvas_id_rejects_relative_components() {
+        assert!(sanitize_canvas_id("..").is_err());
+        assert!(sanitize_canvas_id(".").is_err());
+    }
+
+    #[test]
+    fn canvas_id_rejects_nul_character() {
+        assert!(sanitize_canvas_id("a\0b").is_err());
+    }
+
+    #[test]
+    fn canvas_id_accepts_normal_id() {
+        assert_eq!(
+            sanitize_canvas_id("creative-canvas"),
+            Ok("creative-canvas".to_string())
+        );
+    }
+
+    #[test]
+    fn path_with_parent_dir_component_is_rejected() {
+        assert!(reject_parent_dir(std::path::Path::new("../evil")).is_err());
+        assert!(reject_parent_dir(std::path::Path::new("/app/data/../../evil")).is_err());
+        assert!(reject_parent_dir(std::path::Path::new("C:\\app\\..\\..\\evil")).is_err());
+    }
+
+    #[test]
+    fn path_without_parent_dir_component_passes() {
+        assert!(reject_parent_dir(std::path::Path::new("/app/data/images/a.png")).is_ok());
+        assert!(reject_parent_dir(std::path::Path::new("C:\\app\\data\\media\\a.mp4")).is_ok());
+    }
 }

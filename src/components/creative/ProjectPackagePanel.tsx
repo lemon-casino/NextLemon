@@ -17,6 +17,13 @@ import {
   importProjectPackage,
   parseProjectPackageJson,
 } from "@/services/projectPackageService";
+import type { NextLemonProjectPackageWithMedia } from "@/services/projectPackageService";
+import { isTauriEnvironment } from "@/services/fileStorageService";
+import {
+  backfillMissingMedia,
+  isMediaSyncEnabled,
+} from "@/services/mediaSyncService";
+import type { MediaSyncProgress } from "@/services/mediaSyncService";
 import {
   getAgenticReadinessHeadline,
   parseAgenticReadinessReportJson,
@@ -32,7 +39,7 @@ import { useCreativeStore } from "@/stores/creativeStore";
 import { useFlowStore } from "@/stores/flowStore";
 import { toast } from "@/stores/toastStore";
 import { useWebDavSyncStore } from "@/stores/webDavSyncStore";
-import type { ProjectAssetManifestItem } from "@/types/projectPackage";
+import type { ProjectAssetManifestItem, WebDavSyncConfig } from "@/types/projectPackage";
 import type { AgenticReadinessReport, AgenticReadinessStep } from "@/types/readiness";
 
 export function ProjectPackagePanel() {
@@ -51,7 +58,10 @@ export function ProjectPackagePanel() {
   const lastError = useWebDavSyncStore((state) => state.lastError);
   const updateConfig = useWebDavSyncStore((state) => state.updateConfig);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [mediaProgress, setMediaProgress] = useState<MediaSyncProgress | null>(null);
   const [readinessReport, setReadinessReport] = useState<AgenticReadinessReport | null>(null);
+  const isTauri = isTauriEnvironment();
+  const mediaSyncEnabled = isMediaSyncEnabled(webDavConfig);
 
   const packagePreview = useMemo(() => {
     const projectPackage = createProjectPackage();
@@ -88,8 +98,27 @@ export function ProjectPackagePanel() {
       toast.success(
         `已导入 ${result.importedCanvases} 个画布、${result.importedCreativeAssets} 个素材`
       );
+      // 导入时触发缺失媒体回填（浏览器/未开启“同步媒体文件”时自动跳过）
+      void backfillImportedMedia(projectPackage);
     } catch (error) {
       toast.error(`导入失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    }
+  };
+
+  // 文件包导入后的媒体回填：远端 mediaManifest 有而本地缺的内容 key，
+  // 经 WebDAV 下载并经 save_media_file 写回，重写素材的本地 storagePath
+  const backfillImportedMedia = async (projectPackage: NextLemonProjectPackageWithMedia) => {
+    if (!isTauri || !mediaSyncEnabled || !webDavConfig.enabled) return;
+    try {
+      const result = await backfillMissingMedia({
+        projectPackage,
+        config: webDavConfig,
+        onProgress: setMediaProgress,
+      });
+      if (result.downloaded > 0) toast.success(`媒体回填完成：下载 ${result.downloaded} 个文件`);
+      if (result.failed > 0) toast.error(`媒体回填失败 ${result.failed} 个文件`);
+    } catch (error) {
+      toast.error(`媒体回填失败：${error instanceof Error ? error.message : "未知错误"}`);
     }
   };
 
@@ -111,7 +140,7 @@ export function ProjectPackagePanel() {
 
   const handleWebDavUpload = async () => {
     try {
-      await uploadProjectPackageToWebDav();
+      await uploadProjectPackageToWebDav(undefined, { onMediaProgress: setMediaProgress });
       toast.success("WebDAV 上传完成");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "WebDAV 上传失败");
@@ -120,7 +149,7 @@ export function ProjectPackagePanel() {
 
   const handleWebDavDownload = async () => {
     try {
-      const result = await syncProjectPackageFromWebDav();
+      const result = await syncProjectPackageFromWebDav({ onMediaProgress: setMediaProgress });
       setWarnings(result.warnings);
       toast.success("WebDAV 拉取完成，已按 id/时间戳合并本地与远端数据（Agent 会话保持本地）");
     } catch (error) {
@@ -254,6 +283,27 @@ export function ProjectPackagePanel() {
           />
           启用同步
         </label>
+        <label className="mb-2 flex items-center gap-2 text-xs">
+          <input
+            className="toggle toggle-info toggle-xs"
+            type="checkbox"
+            checked={mediaSyncEnabled}
+            onChange={(event) => {
+              // 契约：syncMedia 是 WebDavSyncConfig 待补的可选字段（类型文件暂不在本包
+              // 可编辑范围），以交集类型写入并随既有 config 持久化，待类型补齐后可移除注解
+              const patch: Partial<WebDavSyncConfig> & { syncMedia?: boolean } = {
+                syncMedia: event.target.checked,
+              };
+              updateConfig(patch);
+            }}
+          />
+          同步媒体文件
+        </label>
+        {!isTauri && (
+          <div className="mb-2 rounded-md bg-warning/10 p-2 text-[11px] text-warning-content">
+            浏览器环境缺少 Tauri 命令，无法读取本地媒体文件：媒体同步自动跳过，仅同步项目包 JSON。
+          </div>
+        )}
         <div className="space-y-2">
           <input
             className="input input-bordered input-xs w-full"
@@ -306,6 +356,19 @@ export function ProjectPackagePanel() {
           <div>状态：{lastStatus || "idle"}</div>
           {lastSyncAt && <div>时间：{new Date(lastSyncAt).toLocaleString()}</div>}
           {lastError && <div className="text-error">错误：{lastError}</div>}
+          {mediaProgress && (
+            <div className="mt-1 space-y-0.5">
+              <div>
+                媒体：{describeMediaPhase(mediaProgress.phase)}
+                {mediaProgress.total > 0 ? `（${mediaProgress.completed}/${mediaProgress.total}）` : ""}
+                {mediaProgress.message ? ` · ${mediaProgress.message}` : ""}
+              </div>
+              <div>
+                上传 {mediaProgress.uploaded} · 下载 {mediaProgress.downloaded} · 失败{" "}
+                {mediaProgress.failed}
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </div>
@@ -642,6 +705,23 @@ function ReadinessStepRow({ step }: { step: AgenticReadinessStep }) {
 function formatReportTime(value: string) {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : value;
+}
+
+function describeMediaPhase(phase: MediaSyncProgress["phase"]): string {
+  switch (phase) {
+    case "collect":
+      return "扫描媒体";
+    case "upload":
+      return "上传媒体";
+    case "download":
+      return "下载媒体";
+    case "done":
+      return "完成";
+    case "skipped":
+      return "已跳过";
+    default:
+      return phase;
+  }
 }
 
 function Metric({ label, value }: { label: string; value: number }) {

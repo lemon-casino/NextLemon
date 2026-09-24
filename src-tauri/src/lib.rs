@@ -1,9 +1,11 @@
+mod agent_process;
 mod storage;
 mod gemini;
 mod ocr_inpaint;
 mod llm;
 mod video;
 
+use agent_process::*;
 use storage::*;
 use gemini::*;
 use ocr_inpaint::*;
@@ -34,6 +36,12 @@ pub fn run() {
             save_media_file,
             list_media_files,
             delete_media_file,
+            read_media_file,
+            // PPT 组装协作取消
+            cancel_ppt_assembly,
+            // 双引擎子进程管理
+            spawn_agent_process,
+            kill_agent_process,
             gemini_generate_content,
             gemini_generate_text,
             lemon_stream_generation,

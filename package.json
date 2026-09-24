@@ -23,6 +23,7 @@
     "verify:local-bridge": "node ./scripts/verify-local-agent-bridge.mjs",
     "verify:brand:templates": "node ./scripts/verify-brand-templates.mjs",
     "mcp:local": "node ./scripts/nextlemon-mcp-stdio.mjs",
+    "bridge:local": "node ./scripts/nextlemon-agent-bridge.mjs",
     "brand:spec": "node ./scripts/export-brand-spec.mjs",
     "test:e2e": "playwright test"
   },

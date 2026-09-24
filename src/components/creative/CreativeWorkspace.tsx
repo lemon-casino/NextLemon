@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -30,7 +30,11 @@ import { AgentPanel } from "@/components/agent/AgentPanel";
 import { BrandKitPanel } from "@/components/creative/BrandKitPanel";
 import { CreativeAssetLibrary } from "@/components/creative/CreativeAssetLibrary";
 import { ProjectPackagePanel } from "@/components/creative/ProjectPackagePanel";
-import { useCreativeStore } from "@/stores/creativeStore";
+import {
+  collectCollapsedBatchChildIds,
+  isItemVisibleInViewport,
+  useCreativeStore,
+} from "@/stores/creativeStore";
 import { toast } from "@/stores/toastStore";
 import {
   isTauriEnvironment,
@@ -453,6 +457,8 @@ function CreativeCanvasSurface({
   const pendingMoveRef = useRef<{ clientX: number; clientY: number } | null>(null);
   // 按住空格进入平移模式（不改变选区）
   const spacePanRef = useRef(false);
+  // 视口裁剪需要容器尺寸（ResizeObserver 跟随窗口/面板变化）
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [marqueeRect, setMarqueeRect] = useState<CreativeCanvasRect | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const canvas = useCreativeStore((state) => state.canvas);
@@ -465,6 +471,20 @@ function CreativeCanvasSurface({
   const clearSelection = useCreativeStore((state) => state.clearSelection);
   const addAssetToCanvas = useCreativeStore((state) => state.addAssetToCanvas);
   const removeItems = useCreativeStore((state) => state.removeItems);
+  const setBatchExpanded = useCreativeStore((state) => state.setBatchExpanded);
+
+  useLayoutEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    // 首帧同步测量，避免初次渲染按 0 尺寸裁剪导致整屏空白闪帧
+    setContainerSize({ width: element.clientWidth, height: element.clientHeight });
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (rect) setContainerSize({ width: rect.width, height: rect.height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   const assetById = useMemo(
     () => new Map(assets.map((asset) => [asset.id, asset])),
@@ -482,6 +502,30 @@ function CreativeCanvasSurface({
     },
     [canvas.viewport]
   );
+
+  // 折叠批量栈的子图不渲染也不参与框选命中（主图已完整覆盖其区域）
+  const collapsedChildIds = useMemo(
+    () => collectCollapsedBatchChildIds(canvas.items),
+    [canvas.items]
+  );
+
+  // 视口外实例裁剪（只裁渲染不裁数据）：选中与拖拽中的实例强制保留渲染；
+  // 折叠栈子图直接跳过。store 数据保持全量，框选/导出/小地图均读全量数据。
+  const renderItems = useMemo(() => {
+    const dragState = dragStateRef.current;
+    const forcedIds = new Set(selectedItemIds);
+    if (dragState && (dragState.type === "move" || dragState.type === "resize")) {
+      forcedIds.add(dragState.itemId);
+    }
+    return canvas.items
+      .filter(
+        (item) =>
+          !collapsedChildIds.has(item.id) &&
+          (forcedIds.has(item.id) ||
+            isItemVisibleInViewport(item, canvas.viewport, containerSize))
+      )
+      .sort((a, b) => a.zIndex - b.zIndex);
+  }, [canvas.items, canvas.viewport, containerSize, selectedItemIds, collapsedChildIds]);
 
   useEffect(() => {
     // 应用合帧后的指针坐标（每帧最多一次 setState）
@@ -519,7 +563,13 @@ function CreativeCanvasSurface({
         };
         const dragItem = canvas.items.find((item) => item.id === state.itemId);
         if (dragItem) {
-          const snapped = computeSnapAdjustment(dragItem, raw, canvas.items);
+          // 批量栈主图拖动时排除自身子图：子图与主图同增量跟随，若参与吸附
+          // 会把参考线锚到跟随中的子图上，导致主图被"吸住"无法拖动。
+          const ownChildIds = dragItem.isBatchRoot ? dragItem.batchChildIds || [] : [];
+          const snapTargets = ownChildIds.length
+            ? canvas.items.filter((item) => !ownChildIds.includes(item.id))
+            : canvas.items;
+          const snapped = computeSnapAdjustment(dragItem, raw, snapTargets);
           moveItem(state.itemId, { x: snapped.x, y: snapped.y });
           setSnapGuides(snapped.guides);
         } else {
@@ -565,7 +615,10 @@ function CreativeCanvasSurface({
           height: Math.abs(world.y - state.startWorld.y),
         };
         if (rect.width > 4 && rect.height > 4) {
-          const hitIds = findItemsInRect(canvas.items, rect).map((item) => item.id);
+          // 折叠栈子图不可见，框选不命中（展开后按各自网格位置正常命中）
+          const hitIds = findItemsInRect(canvas.items, rect)
+            .filter((item) => !collapsedChildIds.has(item.id))
+            .map((item) => item.id);
           const base = state.additive ? selectedItemIds.filter((id) => !hitIds.includes(id)) : [];
           selectItems(Array.from(new Set([...base, ...hitIds])));
         }
@@ -587,7 +640,7 @@ function CreativeCanvasSurface({
       }
       pendingMoveRef.current = null;
     };
-  }, [canvas.items, moveItem, resizeItem, selectedItemIds, screenToWorld, selectItems, setViewport]);
+  }, [canvas.items, collapsedChildIds, moveItem, resizeItem, selectedItemIds, screenToWorld, selectItems, setViewport]);
 
   const undoCanvas = useCreativeStore((state) => state.undoCanvas);
   const redoCanvas = useCreativeStore((state) => state.redoCanvas);
@@ -782,10 +835,7 @@ function CreativeCanvasSurface({
             }}
           />
         )}
-        {canvas.items
-          .slice()
-          .sort((a, b) => a.zIndex - b.zIndex)
-          .map((item) => {
+        {renderItems.map((item) => {
             const asset = assetById.get(item.assetId);
             if (!asset) return null;
             return (
@@ -795,6 +845,11 @@ function CreativeCanvasSurface({
                 asset={asset}
                 selected={selectedItemIds.includes(item.id)}
                 viewport={canvas.viewport}
+                batchTotal={
+                  item.isBatchRoot ? 1 + (item.batchChildIds?.length ?? 0) : undefined
+                }
+                batchExpanded={item.batchExpanded}
+                onToggleBatch={() => setBatchExpanded(item.id, !item.batchExpanded)}
                 onSelect={() => selectItems([item.id])}
                 onMoveStart={(event) => {
                   // 空格/中键平移优先：不拦截事件，让其冒泡到画布容器进入平移分支
@@ -846,6 +901,9 @@ function CreativeCanvasItemView({
   asset,
   selected,
   viewport,
+  batchTotal,
+  batchExpanded,
+  onToggleBatch,
   onSelect,
   onMoveStart,
   onResizeStart,
@@ -854,6 +912,10 @@ function CreativeCanvasItemView({
   asset: CreativeAsset;
   selected: boolean;
   viewport: CreativeViewport;
+  // 批量栈主图的图组总数（含主图自身）；非主图为 undefined
+  batchTotal?: number;
+  batchExpanded?: boolean;
+  onToggleBatch?: () => void;
   onSelect: () => void;
   onMoveStart: (event: React.PointerEvent<HTMLDivElement>) => void;
   onResizeStart: (event: React.PointerEvent<HTMLElement>) => void;
@@ -887,17 +949,39 @@ function CreativeCanvasItemView({
       }}
       onDoubleClick={(event) => {
         event.stopPropagation();
+        // 批量栈主图：双击在展开/收起之间切换（折叠 ⇄ 网格）
+        if (batchTotal != null && batchTotal > 1) {
+          onToggleBatch?.();
+          return;
+        }
         if (asset.kind === "text") setEditing(true);
       }}
     >
       <div className="absolute left-2 top-2 z-10 rounded-md bg-black/45 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur">
         {item.title}
       </div>
-      {item.locked && (
-        <div className="absolute right-2 top-2 z-10 rounded-md bg-black/45 p-1 text-white backdrop-blur">
-          <Lock className="h-3 w-3" />
-        </div>
-      )}
+      <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1">
+        {item.locked && (
+          <div className="rounded-md bg-black/45 p-1 text-white backdrop-blur">
+            <Lock className="h-3 w-3" />
+          </div>
+        )}
+        {batchTotal != null && batchTotal > 1 && onToggleBatch && (
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded-md bg-black/45 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur transition-colors hover:bg-black/65"
+            title={batchExpanded ? "收起图组" : `展开图组（${batchTotal} 张）`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleBatch();
+            }}
+          >
+            <Images className="h-3 w-3" />
+            {batchTotal}
+          </button>
+        )}
+      </div>
 
       <div className="h-full w-full overflow-hidden rounded-md">
         {asset.kind === "text" && (

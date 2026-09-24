@@ -27,6 +27,13 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useFlowStore } from "@/stores/flowStore";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  createAssemblyCancelToken,
+  isAssemblyCancelledResult,
+  requestAssemblyCancel,
+  resolveAssemblyStopPatch,
+} from "@/types/generation";
 import type { PPTAssemblerNodeData, PPTPageData } from "./types";
 import { downloadPPT, downloadScripts, downloadBackgroundPPT } from "./pptBuilder";
 import { useLoadingDots } from "@/hooks/useLoadingDots";
@@ -89,6 +96,12 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
   const stopRequestedRef = useRef(false);
   // 用于硬停止的 AbortController
   const abortControllerRef = useRef<AbortController | null>(null);
+  // 本次组装任务的协作取消 token（随机 id，随任务传入；
+  // 跨包契约：停止时经 invoke("cancel_ppt_assembly", { token }) 由 Rust 侧匹配任务）
+  const assemblyTokenRef = useRef<string | null>(null);
+  // 任务代际：每次开始处理自增。停止回调在 cancel_ppt_assembly 的 IPC 往返期间
+  // 若任务被重启（代际变化），停止的收尾写入必须全部跳过，避免旧快照覆盖新任务状态
+  const taskEpochRef = useRef(0);
 
   // 处理配置面板的打开/关闭动画
   const openPanel = useCallback(() => {
@@ -147,6 +160,7 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
       pages,
       status: "idle",
       processingProgress: null,
+      cancelNotice: undefined,
     });
     // 重置当前页面为第一页
     if (currentPage >= pages.length) {
@@ -212,6 +226,11 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
 
     isProcessingRef.current = true;
     stopRequestedRef.current = false;
+    taskEpochRef.current += 1;
+
+    // 生成本次组装任务的取消 token（随机 id，随任务传入，停止时用于 cancel_ppt_assembly）
+    const cancelToken = createAssemblyCancelToken();
+    assemblyTokenRef.current = cancelToken;
 
     // 创建新的 AbortController
     const abortController = new AbortController();
@@ -236,6 +255,7 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
       });
       isProcessingRef.current = false;
       abortControllerRef.current = null;
+      assemblyTokenRef.current = null;
       return;
     }
 
@@ -246,6 +266,7 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
       });
       isProcessingRef.current = false;
       abortControllerRef.current = null;
+      assemblyTokenRef.current = null;
       return;
     }
 
@@ -267,11 +288,32 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
       error: undefined,
       pages: initialPages,
       processingProgress: { current: 0, total: data.pages.length, currentStep: 'ocr' },
+      cancelNotice: undefined,
     });
 
     const config = {
       ocrApiUrl: data.ocrApiUrl,
       inpaintApiUrl: data.inpaintApiUrl,
+    };
+
+    // 跨包契约：随每页任务传入取消 token（Rust ProcessPageParams.cancel_token，serde camelCase；
+    // OCR 前 / inpaint 前两个检查点命中即提前返回 cancelled，见 src-tauri/src/ocr_inpaint.rs）。
+    // ocrInpaintService 透传层补齐 cancelToken 字段前该参数暂被忽略，补齐后即生效。
+    const pageConfig = { ...config, cancelToken };
+
+    // 命中协作取消（Rust 检查点提前返回）的收尾：processing 页恢复 pending、
+    // 呈现「已取消，已完成 N 页」并结束本次任务
+    const finalizeCancelled = () => {
+      const { resetPages, cancelNotice } = resolveAssemblyStopPatch(getLatestPages(), true);
+      updateNodeData<PPTAssemblerNodeData>(id, {
+        status: "idle",
+        pages: resetPages,
+        processingProgress: null,
+        cancelNotice,
+      });
+      isProcessingRef.current = false;
+      abortControllerRef.current = null;
+      assemblyTokenRef.current = null;
     };
 
     const totalPages = data.pages.length;
@@ -324,8 +366,14 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
           throw new Error("已停止");
         }
 
-        // 调用处理服务
-        const result = await processPageForEditable(page.image, config);
+        // 调用处理服务（随页携带取消 token）
+        const result = await processPageForEditable(page.image, pageConfig);
+
+        // 跨包契约：ProcessPageResult.cancelled=true 表示在检查点命中协作取消
+        if (isAssemblyCancelledResult(result)) {
+          finalizeCancelled();
+          return;
+        }
 
         // 处理完成后再检查一次是否被中断
         if (abortController.signal.aborted || stopRequestedRef.current) {
@@ -361,6 +409,12 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
 
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "处理失败";
+
+        // 跨包契约：透传层把取消结果按 error 抛出（文案「PPT 组装已被取消」）时按取消收尾
+        if (isAssemblyCancelledResult(undefined, error)) {
+          finalizeCancelled();
+          return;
+        }
 
         // 如果是停止导致的错误，重置为 pending 状态
         if (errorMessage === "已停止" || abortController.signal.aborted || stopRequestedRef.current) {
@@ -412,40 +466,49 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
 
     isProcessingRef.current = false;
     abortControllerRef.current = null;
+    assemblyTokenRef.current = null;
   }, [id, data.pages, data.ocrApiUrl, data.inpaintApiUrl, updateNodeData, currentPage]);
 
-  // 停止处理 - 硬停止：立即中断，重置所有正在处理的页面状态
-  const handleStopProcessing = useCallback(() => {
+  // 停止处理 - 硬停止：请求协作取消并立即中断，重置所有正在处理的页面状态
+  const handleStopProcessing = useCallback(async () => {
     // 设置停止标志
     stopRequestedRef.current = true;
 
-    // 中断 AbortController（虽然 Tauri invoke 不支持中断，但可以用于后续检查）
+    // 中断 AbortController（本地 HTTP 处理循环据此尽快退出）
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
 
-    // 硬停止：立即重置所有 processing 状态的页面为 pending，并更新 UI
+    // 记录当前任务代际：cancel_ppt_assembly 的 IPC 往返期间若任务被重启（代际变化），
+    // 本次停止的收尾写入全部跳过——既不用旧快照覆盖新任务的进行状态，
+    // 也不清空新任务持有的 isProcessingRef 占用标志
+    const epoch = taskEpochRef.current;
+    const token = assemblyTokenRef.current;
+
+    // 跨包契约（Rust 包提供）：cancel_ppt_assembly 置位该 token 的取消标志并返回
+    // { cancelled: true }；命令缺失（Rust 未就绪）时返回 false，回退本地停止（不显示取消提示）
+    const backendCancelled = token ? await requestAssemblyCancel(invoke, token) : false;
+
+    if (taskEpochRef.current !== epoch) return;
+
+    assemblyTokenRef.current = null;
+
+    // invoke 返回后重读最新页面（不用停止前的旧快照整体覆盖），重置 processing 页为 pending，
+    // 后端确认取消时呈现「已取消，已完成 N 页」（completed 页面不会被重置，统计前后一致）
     const node = useFlowStore.getState().nodes.find(n => n.id === id);
-    const currentData = node?.data as PPTAssemblerNodeData | undefined;
-    const currentPages = currentData?.pages || [];
+    const currentPages = (node?.data as PPTAssemblerNodeData | undefined)?.pages || [];
+    const { resetPages, cancelNotice } = resolveAssemblyStopPatch(currentPages, backendCancelled);
 
-    // 重置所有 processing 的页面为 pending
-    const resetPages = currentPages.map(p =>
-      p.processStatus === 'processing'
-        ? { ...p, processStatus: 'pending' as const, processError: undefined }
-        : p
-    );
-
-    // 立即更新状态为 idle
     updateNodeData<PPTAssemblerNodeData>(id, {
       status: "idle",
       pages: resetPages,
       processingProgress: null,
       error: undefined,
+      cancelNotice,
     });
 
-    // 重置处理标志
+    // 重置处理标志（仅当任务未被重启时才会走到这里）
     isProcessingRef.current = false;
   }, [id, updateNodeData]);
 
@@ -737,6 +800,14 @@ export const PPTAssemblerNode = memo(({ id, data, selected }: NodeProps<PPTAssem
                 value={data.processingProgress.current}
                 max={data.processingProgress.total}
               />
+            </div>
+          )}
+
+          {/* 取消提示（后端确认取消时呈现「已取消，已完成 N 页」） */}
+          {typeof data.cancelNotice === "string" && data.cancelNotice && (
+            <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 rounded-lg px-2.5 py-2">
+              <Square className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{data.cancelNotice}</span>
             </div>
           )}
 
@@ -1299,6 +1370,14 @@ docker-compose up -d`}
                         {data.processingProgress.currentStep === 'ocr' && ' - 识别文字...'}
                         {data.processingProgress.currentStep === 'inpaint' && ' - 修复背景...'}
                       </span>
+                    </div>
+                  )}
+
+                  {/* 取消提示（后端确认取消时呈现「已取消，已完成 N 页」） */}
+                  {typeof data.cancelNotice === "string" && data.cancelNotice && (
+                    <div className="flex items-center gap-2 text-sm text-warning bg-warning/10 rounded-lg px-3 py-2">
+                      <Square className="w-4 h-4 flex-shrink-0" />
+                      <span>{data.cancelNotice}</span>
                     </div>
                   )}
 

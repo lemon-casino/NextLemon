@@ -245,3 +245,20 @@ export interface SettingsState {
 
 // 提示词相关类型（从 promptConfig.ts 重新导出）
 export type { PromptCategory, PromptItem } from "@/config/promptConfig";
+
+// 画布批量图组字段（批量折叠栈契约）：CreativeCanvasItem 声明于 @/types/creative
+// （不在本包编辑范围内），此处通过模块扩充追加可选字段，效果等价于在声明处添加：
+// - isBatchRoot：该实例是批量图组折叠栈的根（主图），持有 batchChildIds；
+// - batchChildIds：根持有的子图实例 id 列表（不含主图自身；折叠时子图全部叠放在主图下方）；
+// - parentBatchRootId：子图反向指向所属栈根，删除/晋升主图时用于重建栈结构；
+// - batchExpanded：栈是否已展开为网格布局（缺省/false = 折叠，仅渲染主图）。
+// store 全量保存这些字段（撤销/重做、快照、持久化均覆盖）；渲染层只按展开状态
+// 与视口裁剪决定是否绘制；画布导出按实例数据重绘，折叠态由置顶主图自然覆盖子图。
+declare module "@/types/creative" {
+  interface CreativeCanvasItem {
+    isBatchRoot?: boolean;
+    batchChildIds?: string[];
+    parentBatchRootId?: string;
+    batchExpanded?: boolean;
+  }
+}

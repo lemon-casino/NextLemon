@@ -10,6 +10,7 @@ import { ErrorDetailModal } from "@/components/ui/ErrorDetailModal";
 import { ModelSelector } from "@/components/ui/ModelSelector";
 import { useLoadingDots } from "@/hooks/useLoadingDots";
 import type { ImageGeneratorNodeData, ImageInputNodeData, ModelType } from "@/types";
+import { IMAGE_COUNT_OPTIONS, normalizeImageCount } from "@/types/generation";
 import { useImagePresetModels, getDynamicDefaultModel } from "@/config/presetModels";
 
 // 定义节点类型
@@ -217,6 +218,9 @@ function ImageGeneratorBase({
   // 使用节点数据中的模型，如果没有则使用默认模型
   const model: ModelType = data.model || defaultModel;
 
+  // 生成张数（属性面板 1-4 张选择，旧数据缺省 1 张）
+  const imageCount = normalizeImageCount(data.count);
+
   // 处理模型变更
   const handleModelChange = (value: string) => {
     updateNodeData<ImageGeneratorNodeData>(id, { model: value });
@@ -309,15 +313,39 @@ function ImageGeneratorBase({
           inputImages: images,
           aspectRatio: data.aspectRatio,
           imageSize: isPro ? data.imageSize : undefined,
+          count: imageCount,
         }, nodeType, onProgress)
         : await generateImage({
           prompt,
           model,
           aspectRatio: data.aspectRatio,
           imageSize: isPro ? data.imageSize : undefined,
+          count: imageCount,
         }, nodeType, onProgress);
 
-      if (response.imageData) {
+      // 本次生成的全部图片（多图张数）：images 为聚合数组，imageData 兼容字段兜底首图
+      const generatedImages =
+        response.images && response.images.length > 0
+          ? response.images
+          : response.imageData
+            ? [response.imageData]
+            : [];
+
+      // 部分失败信息（部分请求失败但仍有成功图片）：节点 UI 呈现「成功 N 张、失败 M 张」
+      const failedCount = response.failedCount ?? 0;
+      const partialPatch = failedCount > 0
+        ? {
+          partialFailedCount: failedCount,
+          partialError: response.partialError,
+          error: response.partialError,
+        }
+        : {
+          partialFailedCount: undefined,
+          partialError: undefined,
+          error: undefined,
+        };
+
+      if (generatedImages.length > 0) {
         // 在 Tauri 环境中，将图片保存到文件系统
         if (isTauriEnvironment() && activeCanvasId) {
           try {
@@ -359,40 +387,54 @@ function ImageGeneratorBase({
               }
             }
 
-            // 2. 保存生成的图片和元数据
-            const imageInfo = await saveImage(
-              response.imageData,
-              activeCanvasId,
-              id,
-              prompt,
-              inputImagesMetadata.length > 0 ? inputImagesMetadata : undefined,
-              "generated"
-            );
+            // 2. 逐张保存生成的图片（save_image 生成唯一文件名，不会互相覆盖），
+            //    生成元数据只挂在首图上避免重复
+            const outputImagePaths: string[] = [];
+            for (const [index, img] of generatedImages.entries()) {
+              const imageInfo = await saveImage(
+                img,
+                activeCanvasId,
+                index === 0 ? id : `${id}-${index + 1}`,
+                index === 0 ? prompt : undefined,
+                index === 0 && inputImagesMetadata.length > 0 ? inputImagesMetadata : undefined,
+                "generated"
+              );
+              outputImagePaths.push(imageInfo.path);
+            }
 
             // 内存优化：只保存文件路径，不保存 base64 到内存
             updateNodeDataWithCanvas(id, {
               status: "success",
               outputImage: undefined,  // 不再保存 base64 到内存
-              outputImagePath: imageInfo.path,
-              error: undefined,
+              outputImagePath: outputImagePaths[0],
+              outputImages: undefined,
+              outputImagePaths,
+              outputCount: generatedImages.length,
+              ...partialPatch,
             });
           } catch (saveError) {
             // 如果文件保存失败，回退到仅 base64 存储
             console.warn("文件保存失败，回退到 base64 存储:", saveError);
             updateNodeDataWithCanvas(id, {
               status: "success",
-              outputImage: response.imageData,
+              outputImage: generatedImages[0],
               outputImagePath: undefined,
-              error: undefined,
+              outputImages: generatedImages,
+              outputImagePaths: undefined,
+              outputCount: generatedImages.length,
+              ...partialPatch,
             });
           }
         } else {
           // 非 Tauri 环境或没有画布 ID，使用 base64 存储
           updateNodeDataWithCanvas(id, {
             status: "success",
-            outputImage: response.imageData,
+            outputImage: generatedImages[0],
             outputImagePath: undefined,
-            error: undefined,
+            outputImages: generatedImages,
+            outputImagePaths: undefined,
+            outputCount: generatedImages.length,
+            ...partialPatch,
           });
         }
       } else if (response.error) {
@@ -413,7 +455,7 @@ function ImageGeneratorBase({
         error: "生成失败",
       });
     }
-  }, [id, model, data.aspectRatio, data.imageSize, isPro, updateNodeDataWithCanvas, getConnectedInputDataAsync, getConnectedImagesWithInfo]);
+  }, [id, model, data.aspectRatio, data.imageSize, imageCount, isPro, updateNodeDataWithCanvas, getConnectedInputDataAsync, getConnectedImagesWithInfo]);
 
   // 节点样式配置
   const headerGradient = isPro
@@ -515,6 +557,31 @@ function ImageGeneratorBase({
                 ))}
               </div>
             </div>
+            <div>
+              <label className="text-xs text-base-content/60 mb-0.5 block">张数</label>
+              <div className="grid grid-cols-4 gap-1">
+                {IMAGE_COUNT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    className={`
+                      btn btn-xs px-0
+                      ${imageCount === opt
+                        ? (isPro ? "btn-primary" : "btn-warning")
+                        : "btn-ghost bg-base-200"
+                      }
+                    `}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateNodeData<ImageGeneratorNodeData>(id, { count: opt });
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
             {isPro && (
               <div>
                 <label className="text-xs text-base-content/60 mb-0.5 block">分辨率</label>
@@ -581,7 +648,21 @@ function ImageGeneratorBase({
             </div>
           )}
 
-          {/* 预览图 - 桌面端使用本地文件存储 */}
+          {/* 部分失败提示：多图部分请求失败但仍有成功图片 */}
+          {data.status === "success" && typeof data.partialFailedCount === "number" && data.partialFailedCount > 0 && (
+            <div
+              className="flex items-start gap-2 text-warning text-xs bg-warning/10 p-2 rounded cursor-pointer hover:bg-warning/20 transition-colors"
+              onClick={() => data.error && setShowErrorDetail(true)}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+              <span className="line-clamp-3 break-all">
+                {`成功 ${typeof data.outputCount === "number" ? data.outputCount : data.outputImages?.length ?? 0} 张、失败 ${data.partialFailedCount} 张${data.partialError ? `：${data.partialError}` : ""}`}
+              </span>
+            </div>
+          )}
+
+          {/* 预览图 - 桌面端使用本地文件存储（多图张数时预览首图并显示张数角标） */}
           {(data.outputImage || data.outputImagePath) && (
             <div
               className="relative group cursor-pointer"
@@ -599,6 +680,11 @@ function ImageGeneratorBase({
                   className="w-full h-full object-cover"
                 />
               </div>
+              {typeof data.outputCount === "number" && data.outputCount > 1 && (
+                <span className="absolute top-1 right-1 z-10 text-[10px] bg-black/60 text-white px-1.5 py-0.5 rounded">
+                  共 {data.outputCount} 张
+                </span>
+              )}
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
                 <Maximize2 className="w-6 h-6 text-white" />
               </div>

@@ -31,6 +31,8 @@ interface AgentStore {
 
   setProviderConfig: (kind: AgentProviderKind, patch: Partial<AgentProviderConfig>) => void;
   createSession: (title?: string, providerKind?: AgentProviderKind) => string;
+  // 跨包契约导出（最近项目/深链包消费）：创建会话、写入首条用户消息并返回会话 id。
+  createSessionFromBrief: (brief: string) => string;
   renameSession: (sessionId: string, title: string) => void;
   upsertSession: (session: AgentSession) => void;
   updateSession: (sessionId: string, patch: Partial<AgentSession>) => void;
@@ -154,6 +156,14 @@ export const useAgentStore = create<AgentStore>()(
         }));
 
         return session.id;
+      },
+
+      createSessionFromBrief: (brief) => {
+        const trimmed = brief.trim();
+        const title = trimmed ? (trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed) : "新建 Agent 会话";
+        const sessionId = get().createSession(title, "local");
+        if (trimmed) get().addMessage(sessionId, "user", trimmed);
+        return sessionId;
       },
 
       renameSession: (sessionId, title) => {
@@ -390,7 +400,7 @@ export const useAgentStore = create<AgentStore>()(
       name: "nextlemon-agent-workspace",
       storage: createJSONStorage(() => tauriStorage),
       partialize: (state) => ({
-        providerConfigs: state.providerConfigs,
+        providerConfigs: stripSessionOnlyProviderApiKeys(state.providerConfigs),
         sessions: state.sessions,
         activeSessionId: state.activeSessionId,
       }),
@@ -400,6 +410,21 @@ export const useAgentStore = create<AgentStore>()(
     }
   )
 );
+
+// 「仅本会话保存」的 API Key 不落盘：partialize 时剥除（内存保留，刷新即清）。
+export function stripSessionOnlyProviderApiKeys(
+  providerConfigs: Record<AgentProviderKind, AgentProviderConfig>
+): Record<AgentProviderKind, AgentProviderConfig> {
+  return Object.fromEntries(
+    (Object.keys(providerConfigs) as AgentProviderKind[]).map((kind) => {
+      const config = providerConfigs[kind];
+      return [
+        kind,
+        config.metadata?.sessionOnlyApiKey === true ? { ...config, apiKey: undefined } : config,
+      ];
+    })
+  ) as Record<AgentProviderKind, AgentProviderConfig>;
+}
 
 function appendEventToLastAssistantMessage(messages: AgentMessage[], event: AgentEvent): AgentMessage[] {
   const lastAssistantIndex = findLastAssistantMessageIndex(messages);

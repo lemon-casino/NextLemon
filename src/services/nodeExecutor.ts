@@ -17,6 +17,7 @@ import { useFlowStore } from "@/stores/flowStore";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useCreativeStore } from "@/stores/creativeStore";
 import { generateImage, editImage } from "@/services/imageService";
+import { normalizeImageCount } from "@/types/generation";
 import { generateLLMContent, generateText } from "@/services/llmService";
 import { createVideoTask, pollVideoTask } from "@/services/videoService";
 import { saveImage, isTauriEnvironment, readImage } from "@/services/fileStorageService";
@@ -272,6 +273,8 @@ async function executeImageGeneratorNode(
   const data = node.data as ImageGeneratorNodeData;
   const isPro = node.type === "imageGeneratorProNode";
   const nodeType = isPro ? "imageGeneratorPro" : "imageGeneratorFast";
+  // 生成张数（属性面板 1-4 张选择，旧数据缺省 1 张）
+  const count = normalizeImageCount(data.count);
   // 使用画布感知的数据读取，解决画布切换问题（异步从文件加载图片）
   const { prompt, images } = await getConnectedInputDataFromCanvas(node.id, canvasId);
 
@@ -291,7 +294,7 @@ async function executeImageGeneratorNode(
   });
 
   try {
-    // 调用服务
+    // 调用服务（透传张数，服务内部按张数拆分并发请求）
     const response =
       images.length > 0
         ? await editImage(
@@ -301,6 +304,7 @@ async function executeImageGeneratorNode(
             inputImages: images,
             aspectRatio: data.aspectRatio,
             imageSize: isPro ? data.imageSize : undefined,
+            count,
           },
           nodeType,
           undefined, // onProgress
@@ -312,6 +316,7 @@ async function executeImageGeneratorNode(
             model: data.model,
             aspectRatio: data.aspectRatio,
             imageSize: isPro ? data.imageSize : undefined,
+            count,
           },
           nodeType,
           undefined, // onProgress
@@ -335,28 +340,61 @@ async function executeImageGeneratorNode(
       return { success: false, error: response.error };
     }
 
-    // 保存图片
-    let imagePath: string | undefined;
-    if (isTauriEnvironment() && response.imageData) {
-      try {
-        const imageInfo = await saveImage(response.imageData, canvasId, node.id);
-        imagePath = imageInfo.path;
-      } catch {
-        // 文件保存失败，回退到 base64
+    // 本次生成的全部图片（多图张数）：images 为聚合数组，imageData 兼容字段兜底首图
+    const generatedImages =
+      response.images && response.images.length > 0
+        ? response.images
+        : response.imageData
+          ? [response.imageData]
+          : [];
+
+    // 逐张保存图片（与 images 下标对齐，保存失败项为 undefined 时消费方回退 base64）
+    const imagePaths: Array<string | undefined> = generatedImages.map(() => undefined);
+    if (isTauriEnvironment() && generatedImages.length > 0) {
+      for (const [index, img] of generatedImages.entries()) {
+        try {
+          const imageInfo = await saveImage(
+            img,
+            canvasId,
+            index === 0 ? node.id : `${node.id}-${index + 1}`
+          );
+          imagePaths[index] = imageInfo.path;
+        } catch {
+          // 文件保存失败，回退到 base64
+        }
       }
     }
 
-    // 更新成功状态
+    // 部分失败信息（部分请求失败但仍有成功图片）：节点与 UI 呈现「成功 N 张、失败 M 张」
+    const failedCount = response.failedCount ?? 0;
+    const partialFailed = failedCount > 0;
+
+    // 更新成功状态（首图镜像到既有单图字段保持向后兼容；多图数组供画布批量栈落位）
     updateNodeDataWithCanvas<ImageGeneratorNodeData>(node.id, canvasId, {
       status: "success",
-      outputImage: response.imageData,
-      outputImagePath: imagePath,
-      error: undefined,
+      outputImage: generatedImages[0],
+      outputImagePath: imagePaths[0],
+      outputImages: generatedImages,
+      outputImagePaths: imagePaths.some(Boolean) ? imagePaths : undefined,
+      outputCount: generatedImages.length,
+      partialFailedCount: partialFailed ? failedCount : undefined,
+      partialError: partialFailed ? response.partialError : undefined,
+      error: partialFailed ? response.partialError : undefined,
     });
 
     return {
       success: true,
-      output: { imageData: response.imageData, imagePath },
+      output: {
+        imageData: generatedImages[0],
+        imagePath: imagePaths[0],
+        // 跨包契约：多图数组由画布包经工作流结果 auto-sink 消费，调用
+        // creativeStore.addImageBatchToCanvas（creativeStore.ts:53、525）做批量图组折叠栈落位；
+        // workflowEngine 目前只读 result.success/error，接线由画布包完成
+        images: generatedImages,
+        imagePaths,
+        failedCount: partialFailed ? failedCount : undefined,
+        partialError: partialFailed ? response.partialError : undefined,
+      },
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "执行失败";

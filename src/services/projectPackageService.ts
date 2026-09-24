@@ -20,7 +20,22 @@ import type {
 
 const PROJECT_PACKAGE_VERSION = "1.0.0";
 
-export function createProjectPackage(): NextLemonProjectPackage {
+// 媒体清单条目：内容寻址（sha-256）+ 扩展名 + 字节数，供 WebDAV 媒体差量同步
+// 消费（见 mediaSyncService）。originPaths 记录导出端素材的本地 storagePath：
+// 导入/合并不会改写 storagePath，导入端据此匹配并回填缺失媒体。
+export interface MediaManifestEntry {
+  sha256: string;
+  ext: string;
+  bytes: number;
+  originPaths?: string[];
+}
+
+// schemaVersion 1 可选扩展：旧包无 mediaManifest 字段，解析与校验保持兼容
+export type NextLemonProjectPackageWithMedia = NextLemonProjectPackage & {
+  mediaManifest?: MediaManifestEntry[];
+};
+
+export function createProjectPackage(): NextLemonProjectPackageWithMedia {
   const exportedAt = Date.now();
   const workspace = useWorkspaceStore.getState();
   const canvasStore = useCanvasStore.getState();
@@ -87,9 +102,13 @@ export function createProjectPackage(): NextLemonProjectPackage {
       activeSessionId: agent.activeSessionId,
     },
     assetManifest,
+    // 创建时为空：媒体需经 read_media_file 读取并做 sha-256，WebDAV 上传前由
+    // mediaSyncService 差量同步填充（见 webDavSyncService.enrichPackageWithMediaManifest）
+    mediaManifest: [],
     notes: [
       `Workflow edge count: ${workflowEdgeCount}`,
       "External files are referenced in assetManifest and are not duplicated into this JSON package.",
+      "Media files are content-addressed (sha256.ext) in mediaManifest and synced via the WebDAV /media/ collection.",
     ],
   };
 }
@@ -122,7 +141,7 @@ export async function exportProjectPackageToFile(projectPackage = createProjectP
   return true;
 }
 
-export function parseProjectPackageJson(json: string): NextLemonProjectPackage {
+export function parseProjectPackageJson(json: string): NextLemonProjectPackageWithMedia {
   const parsed = JSON.parse(json) as unknown;
   if (!isProjectPackage(parsed)) {
     throw new Error("不是有效的 NextLemon 项目包");
@@ -251,9 +270,9 @@ export function getProjectPackageWarnings(projectPackage: NextLemonProjectPackag
 // 之后又有更新的修改则复活）。Agent 会话是本地优先数据，不参与合并
 // （远端整包覆盖会破坏对话）。
 export function mergeProjectPackages(
-  local: NextLemonProjectPackage,
-  incoming: NextLemonProjectPackage
-): NextLemonProjectPackage {
+  local: NextLemonProjectPackageWithMedia,
+  incoming: NextLemonProjectPackageWithMedia
+): NextLemonProjectPackageWithMedia {
   const canvases = mergeWorkflowCanvases(local.workflow.canvases, incoming.workflow.canvases);
   const creativeTombstones = mergeById(
     local.creative.tombstones || [],
@@ -319,6 +338,7 @@ export function mergeProjectPackages(
     (item) => item.id,
     () => 0
   );
+  const mediaManifest = mergeMediaManifests(local.mediaManifest, incoming.mediaManifest);
 
   return {
     ...local,
@@ -353,7 +373,31 @@ export function mergeProjectPackages(
     },
     agent: local.agent,
     assetManifest,
+    mediaManifest,
   };
+}
+
+// 媒体清单合并：按 sha256 并集去重（内容寻址，无新旧之分）；
+// 同内容多来源路径合并进 originPaths，便于导入端按原始 storagePath 匹配回填
+function mergeMediaManifests(
+  local?: MediaManifestEntry[],
+  incoming?: MediaManifestEntry[]
+): MediaManifestEntry[] {
+  if (!local?.length) return incoming ? [...incoming] : [];
+  if (!incoming?.length) return [...local];
+  const bySha = new Map<string, MediaManifestEntry>();
+  for (const entry of [...local, ...incoming]) {
+    const existing = bySha.get(entry.sha256);
+    if (!existing) {
+      bySha.set(entry.sha256, entry);
+      continue;
+    }
+    const originPaths = Array.from(
+      new Set([...(existing.originPaths || []), ...(entry.originPaths || [])])
+    );
+    bySha.set(entry.sha256, originPaths.length > 0 ? { ...existing, originPaths } : existing);
+  }
+  return Array.from(bySha.values());
 }
 
 // 墓碑裁决：deletedAt 晚于实体 updatedAt 的实体在合并结果中被视为已删除；

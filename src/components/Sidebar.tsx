@@ -15,6 +15,7 @@ import {
   Eye,
   User,
   Settings,
+  History,
   Images,
   Globe,
   RefreshCw,
@@ -40,6 +41,10 @@ const navItems: { id: SidebarView; icon: React.ComponentType<{ className?: strin
 
 interface SidebarProps {
   onDragStart: (event: React.DragEvent, nodeType: string, defaultData: Record<string, unknown>) => void;
+  // 最近项目浮层的受控状态与开关回调：浮层本体与状态由 App 常驻持有
+  // （Sidebar 仅在 workflow 模式渲染，进入 creative 模式后由 App 的浮动入口接管）。
+  isRecentProjectsOpen?: boolean;
+  onToggleRecentProjects?: () => void;
 }
 
 // 按关键词过滤提示词分类（内置库与在线提示词共用）
@@ -59,7 +64,7 @@ function filterPromptCategories(categories: PromptCategory[], query: string): Pr
     .filter((category) => category.prompts.length > 0);
 }
 
-export function Sidebar({ onDragStart }: SidebarProps) {
+export function Sidebar({ onDragStart, isRecentProjectsOpen = false, onToggleRecentProjects }: SidebarProps) {
   const {
     canvases,
     activeCanvasId,
@@ -311,6 +316,26 @@ export function Sidebar({ onDragStart }: SidebarProps) {
               </div>
             );
           })}
+
+          {/* 最近项目入口（浮层由 App 常驻持有，此处仅受控开关） */}
+          <div className="relative group w-full flex justify-center mb-3">
+            {isRecentProjectsOpen && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-r-full shadow-[0_0_10px_theme(colors.primary)]" />
+            )}
+            <button
+              className={`
+                w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 cursor-pointer
+                ${isRecentProjectsOpen
+                  ? "bg-primary text-primary-content shadow-lg scale-105"
+                  : "hover:bg-base-100/80 text-base-content/60 hover:text-base-content hover:shadow-md hover:scale-105"
+                }
+              `}
+              data-tip="最近项目"
+              onClick={() => onToggleRecentProjects?.()}
+            >
+              <History className={`w-5 h-5 transition-transform duration-300 ${isRecentProjectsOpen ? "scale-110" : "group-hover:scale-110"}`} />
+            </button>
+          </div>
 
           {/* 底部设置按钮 */}
           <div className="mt-auto relative group w-full flex justify-center">

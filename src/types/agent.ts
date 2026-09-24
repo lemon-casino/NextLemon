@@ -3,6 +3,25 @@ import type { CanvasAgentOp, CreativeAsset, CreativeCanvasData, DesignPlan } fro
 
 export type AgentProviderKind = "local" | "muapi";
 
+// Local Provider 引擎模式：本地规则路由 / 真实模型工具循环 / Codex CLI / Claude Code CLI。
+export type LocalAgentEngineMode = "rules" | "model-loop" | "codex" | "claude-code";
+
+// AgentProviderConfig.metadata 中与 Agent 面板约定的键（metadata 为宽松 Record，缺失时回退默认值）。
+export interface LocalAgentEngineMetadata {
+  // 本地引擎选择；缺省时按 modelToolLoop 推断（true → model-loop，否则 rules）。
+  engine?: LocalAgentEngineMode;
+  // 旧版「真实模型工具调用」开关，保留以兼容既有持久化数据。
+  modelToolLoop?: boolean;
+  // Codex CLI 可执行文件路径（缺省用 PATH 上的 codex）。
+  codexPath?: string;
+  // Claude Code CLI 可执行文件路径（缺省用 PATH 上的 claude）。
+  claudeCodePath?: string;
+  // 引擎默认工作目录（会话线程绑定；会话 metadata.engineCwd 优先）。
+  engineCwd?: string;
+  // 勾选后该 provider 的 apiKey 不写入本地存储（内存保留，刷新即清）。
+  sessionOnlyApiKey?: boolean;
+}
+
 export interface AgentApprovalAuditMetadata {
   requestId?: string;
   source?: string;
