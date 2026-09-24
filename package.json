@@ -62,5 +62,11 @@
   },
   "volta": {
     "node": "20.19.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@google/genai",
+      "esbuild"
+    ]
   }
 }
